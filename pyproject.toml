@@ -1,0 +1,27 @@
+# file: pyproject.toml
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmcache-aerospike"
+version = "0.1.0"
+description = "Aerospike remote storage backend for LMCache"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { text = "Apache-2.0" }
+dependencies = [
+  "aerospike>=14.0.0,<19.0.0",
+  "lmcache>=0.4.5,<0.5",
+]
+
+[project.optional-dependencies]
+metrics = ["prometheus_client>=0.19"]
+dev = ["pytest>=7", "pytest-asyncio>=0.23", "pytest-benchmark>=4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
