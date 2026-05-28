@@ -43,9 +43,10 @@ def round_trip_payload_sizes() -> list[int]:
 
 
 def crash_test_target_bytes() -> int:
-    """Payload large enough to shard; keep small on GitHub-hosted runners (RAM)."""
+    """Payload large enough to shard (must exceed single-record threshold on CE)."""
     if on_github_actions():
-        return 512 * KIB + 8192
+        # Aerospike CE in CI: 1 MiB max record minus 64 KiB safety margin → ~983 KiB threshold.
+        return 1048576 - 65536 + 8192
     return 2 * MIB
 
 requires_large = pytest.mark.skipif(
