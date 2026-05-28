@@ -51,6 +51,10 @@ class AerospikeUnknownError(AerospikeConnectorError):
 def classify(exc: BaseException) -> str:
     """Map an Aerospike exception to a behavior bucket."""
     code = getattr(exc, "code", None)
+    if code == AEROSPIKE_ERR_KEY_BUSY:
+        return "busy"
+    if code == AEROSPIKE_ERR_FAIL_FORBIDDEN:
+        return "forbidden_ttl"
 
     if isinstance(exc, ax.RecordNotFound):
         return "not_found"
