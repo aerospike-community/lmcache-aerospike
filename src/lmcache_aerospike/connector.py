@@ -18,7 +18,7 @@ from lmcache.v1.memory_management import MemoryObj
 from lmcache.v1.storage_backend.connector.base_connector import RemoteConnector
 
 from lmcache_aerospike import keys as K
-from lmcache_aerospike import limits, policies, serde
+from lmcache_aerospike import limits, metrics, policies, serde
 from lmcache_aerospike.client import AerospikeClientHolder
 from lmcache_aerospike.config import AerospikeConfig
 from lmcache_aerospike.errors import (
@@ -106,17 +106,25 @@ class AerospikeRemoteConnector(RemoteConnector):
         self._holder.release()
 
     def _exists_sync_impl(self, ck: CacheEngineKey) -> bool:
-        mk = K.meta_key(self.cfg.namespace, self.cfg.set_name, ck)
+        timer = metrics.OpTimer("exists")
         try:
-            _key, _meta, _bins = self._client.select(mk, ["state"])
-        except ax.RecordNotFound:
-            return False
-        except ax.AerospikeError as exc:
-            if classify(exc) == "timeout":
-                logger.warning("exists timeout for %s", ck)
+            mk = K.meta_key(self.cfg.namespace, self.cfg.set_name, ck)
+            try:
+                _key, _meta, _bins = self._client.select(mk, ["state"])
+            except ax.RecordNotFound:
+                timer.result = "miss"
                 return False
-            raise map_aerospike_error("exists", exc) from exc
-        return True
+            except ax.AerospikeError as exc:
+                if classify(exc) == "timeout":
+                    logger.warning("exists timeout for %s", ck)
+                    timer.result = "timeout"
+                    return False
+                timer.map_exception(exc)
+                raise map_aerospike_error("exists", exc) from exc
+            timer.result = "hit"
+            return True
+        finally:
+            timer.finish()
 
     def exists_sync(self, key: CacheEngineKey) -> bool:
         return self._exists_sync_impl(key)
@@ -125,72 +133,92 @@ class AerospikeRemoteConnector(RemoteConnector):
         return await self._run(self._exists_sync_impl, key)
 
     def _get_sync_impl(self, ck: CacheEngineKey) -> Optional[MemoryObj]:
-        mk = K.meta_key(self.cfg.namespace, self.cfg.set_name, ck)
+        timer = metrics.OpTimer("get")
         try:
-            _key, _meta, bins = self._client.get(mk)
-        except ax.RecordNotFound:
-            return None
-        except ax.AerospikeError as exc:
-            if classify(exc) == "timeout":
-                logger.warning("get timeout for %s", ck)
+            mk = K.meta_key(self.cfg.namespace, self.cfg.set_name, ck)
+            try:
+                _key, _meta, bins = self._client.get(mk)
+            except ax.RecordNotFound:
+                timer.result = "miss"
                 return None
-            if classify(exc) == "connection":
-                raise AerospikeConnectionError(str(exc)) from exc
-            raise map_aerospike_error("get", exc) from exc
-
-        if bins.get("state") != "ready":
-            return None
-
-        nseg = int(bins["nseg"])
-        mo, expect_reshape = serde.allocate_for_read(
-            self.local_cpu_backend, self, bins
-        )
-        if mo is None:
-            return None
-
-        total_written = 0
-        try:
-            if nseg == 1:
-                payload = bins.get("b")
-                if payload is None:
+            except ax.AerospikeError as exc:
+                if classify(exc) == "timeout":
+                    logger.warning("get timeout for %s", ck)
+                    timer.result = "timeout"
                     return None
-                total_written = serde.write_payload_into(mo, payload)
-            else:
-                seg_keys = K.segment_keys(
-                    self.cfg.namespace, self.cfg.set_name, ck, nseg
-                )
-                brs = self._client.batch_read(seg_keys, ["b"])
-                offset = 0
-                for rec in brs.batch_records:
-                    if rec.result != AEROSPIKE_OK or rec.record is None:
-                        logger.warning("missing/in-flight segment for %s", ck)
-                        mo.ref_count_down()
-                        return None
-                    chunk = rec.record[2]["b"]
-                    total_written += serde.write_payload_into(mo, chunk, offset)
-                    offset += len(chunk)
+                if classify(exc) == "connection":
+                    timer.result = "error"
+                    raise AerospikeConnectionError(str(exc)) from exc
+                timer.map_exception(exc)
+                raise map_aerospike_error("get", exc) from exc
 
-            if self.cfg.enable_crc32:
-                expected = bins.get("crc32")
-                if expected is not None:
-                    payload_view = memoryview(mo.byte_array)[:total_written]
-                    actual = zlib.crc32(payload_view) & 0xFFFFFFFF
-                    if actual != expected:
-                        logger.error("crc32 mismatch for %s", ck)
-                        mo.ref_count_down()
-                        return None
+            if bins.get("state") != "ready":
+                timer.result = "miss"
+                return None
 
-            if expect_reshape:
-                mo = self.reshape_partial_chunk(mo, total_written)
-            return mo
-        except Exception:
-            mo.ref_count_down()
-            raise
+            nseg = int(bins["nseg"])
+            mo, expect_reshape = serde.allocate_for_read(
+                self.local_cpu_backend, self, bins
+            )
+            if mo is None:
+                timer.result = "miss"
+                return None
+
+            total_written = 0
+            try:
+                if nseg == 1:
+                    payload = bins.get("b")
+                    if payload is None:
+                        timer.result = "miss"
+                        return None
+                    total_written = serde.write_payload_into(mo, payload)
+                else:
+                    seg_keys = K.segment_keys(
+                        self.cfg.namespace, self.cfg.set_name, ck, nseg
+                    )
+                    brs = self._client.batch_read(seg_keys, ["b"])
+                    offset = 0
+                    for rec in brs.batch_records:
+                        if rec.result != AEROSPIKE_OK or rec.record is None:
+                            logger.warning(
+                                "missing/in-flight segment for %s", ck
+                            )
+                            mo.ref_count_down()
+                            timer.result = "miss"
+                            return None
+                        chunk = rec.record[2]["b"]
+                        total_written += serde.write_payload_into(
+                            mo, chunk, offset
+                        )
+                        offset += len(chunk)
+
+                if self.cfg.enable_crc32:
+                    expected = bins.get("crc32")
+                    if expected is not None:
+                        payload_view = memoryview(mo.byte_array)[:total_written]
+                        actual = zlib.crc32(payload_view) & 0xFFFFFFFF
+                        if actual != expected:
+                            logger.error("crc32 mismatch for %s", ck)
+                            mo.ref_count_down()
+                            timer.result = "miss"
+                            return None
+
+                if expect_reshape:
+                    mo = self.reshape_partial_chunk(mo, total_written)
+                timer.result = "hit"
+                return mo
+            except Exception:
+                mo.ref_count_down()
+                timer.result = "error"
+                raise
+        finally:
+            timer.finish()
 
     async def get(self, key: CacheEngineKey) -> Optional[MemoryObj]:
         return await self._run(self._get_sync_impl, key)
 
     def _put_sync_impl(self, ck: CacheEngineKey, memory_obj: MemoryObj) -> None:
+        timer = metrics.OpTimer("put")
         assert self._resolved is not None
         view = memory_obj.byte_array
         total = len(view)
@@ -202,6 +230,7 @@ class AerospikeRemoteConnector(RemoteConnector):
             min_segment_bytes=r.min_segment_bytes,
             single_record_threshold_bytes=r.single_record_threshold_bytes,
         )
+        metrics.observe_segments(p.nseg, total)
         ttl = self._ttl_value(pinned=False)
         wmeta = self._put_meta(ttl)
         wp = policies.write_policy(self.cfg)
@@ -219,6 +248,7 @@ class AerospikeRemoteConnector(RemoteConnector):
         try:
             if p.nseg == 1:
                 self._client.put(mk, mbins, meta=wmeta, policy=wp)
+                timer.result = "ok"
                 return
 
             seg_b = p.seg_b
@@ -250,7 +280,9 @@ class AerospikeRemoteConnector(RemoteConnector):
                     )
 
             self._client.put(mk, mbins, meta=wmeta, policy=wp)
+            timer.result = "ok"
         except ax.RecordTooBig as exc:
+            timer.result = "record_too_big"
             raise AerospikeRecordTooBigError(
                 f"put payload {total} bytes exceeds server limits "
                 f"(max_segment={r.max_segment_bytes})"
@@ -258,10 +290,15 @@ class AerospikeRemoteConnector(RemoteConnector):
         except ax.AerospikeError as exc:
             bucket = classify(exc)
             if bucket == "forbidden_ttl":
+                timer.result = "error"
                 raise AerospikeTTLConfigError(str(exc)) from exc
             if bucket == "busy":
+                timer.result = "busy"
                 raise AerospikeBusyError(str(exc)) from exc
+            timer.map_exception(exc)
             raise map_aerospike_error("put", exc) from exc
+        finally:
+            timer.finish()
 
     async def put(self, key: CacheEngineKey, memory_obj: MemoryObj) -> None:
         await self._run(self._put_sync_impl, key, memory_obj)
@@ -271,10 +308,11 @@ class AerospikeRemoteConnector(RemoteConnector):
 
     async def batched_get(self, keys: List[CacheEngineKey]) -> List[Optional[MemoryObj]]:
         async with self._batch_sem:
-            order = list(keys)
-            unique = list(dict.fromkeys(order))
-            fetched = {k: await self.get(k) for k in unique}
-            return [fetched[k] for k in order]
+            with metrics.track_in_flight():
+                order = list(keys)
+                unique = list(dict.fromkeys(order))
+                fetched = {k: await self.get(k) for k in unique}
+                return [fetched[k] for k in order]
 
     def support_batched_put(self) -> bool:
         return True
@@ -283,29 +321,38 @@ class AerospikeRemoteConnector(RemoteConnector):
         self, keys: List[CacheEngineKey], memory_objs: List[MemoryObj]
     ) -> None:
         async with self._batch_sem:
-            await asyncio.gather(
-                *(self.put(k, mo) for k, mo in zip(keys, memory_objs))
-            )
+            with metrics.track_in_flight():
+                await asyncio.gather(
+                    *(self.put(k, mo) for k, mo in zip(keys, memory_objs))
+                )
 
     def support_batched_contains(self) -> bool:
         return True
 
     def _batched_contains_sync(self, keys: List[CacheEngineKey]) -> int:
-        if not keys:
-            return 0
-        meta_keys = [
-            K.meta_key(self.cfg.namespace, self.cfg.set_name, k) for k in keys
-        ]
+        timer = metrics.OpTimer("batched_contains")
         try:
-            brs = self._client.batch_read(meta_keys, [])
-        except ax.AerospikeError:
-            return 0
-        count = 0
-        for rec in brs.batch_records:
-            if rec.result != AEROSPIKE_OK:
-                return count
-            count += 1
-        return count
+            if not keys:
+                timer.result = "ok"
+                return 0
+            meta_keys = [
+                K.meta_key(self.cfg.namespace, self.cfg.set_name, k) for k in keys
+            ]
+            try:
+                brs = self._client.batch_read(meta_keys, [])
+            except ax.AerospikeError:
+                timer.result = "error"
+                return 0
+            count = 0
+            for rec in brs.batch_records:
+                if rec.result != AEROSPIKE_OK:
+                    timer.result = "ok"
+                    return count
+                count += 1
+            timer.result = "ok"
+            return count
+        finally:
+            timer.finish()
 
     def batched_contains(self, keys: List[CacheEngineKey]) -> int:
         return self._batched_contains_sync(keys)

@@ -1,6 +1,6 @@
 # LMCache Aerospike Backend - Design Document
 
-**Status:** Draft v0.2
+**Status:** v0.2 — Phase 1 implemented (see `main` and `IMPLEMENTATION_PLAN.md`)
 **Audience:** Engineers implementing and reviewing an Aerospike storage backend for [LMCache](https://github.com/LMCache/LMCache).
 **Scope:** A multi-phase plan delivering an Aerospike-backed remote KV-cache tier for LMCache, anchored to LMCache's `RemoteConnector` plugin contract and a CE-only, adaptive-sharded Aerospike data model tuned for ~4 MiB chunks.
 
