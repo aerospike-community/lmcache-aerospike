@@ -1,1 +1,11 @@
-# Placeholder for S13 integration environment.
+services:
+  aerospike:
+    image: aerospike/aerospike-server:latest
+    container_name: lmcache-aerospike-ce
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+      - "3003:3003"
+    volumes:
+      - ./aerospike.conf:/etc/aerospike/aerospike.conf:ro
+    command: ["--config-file", "/etc/aerospike/aerospike.conf"]
