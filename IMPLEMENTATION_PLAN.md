@@ -171,7 +171,7 @@ for name in ("put", "get", "select", "exists", "remove",
              "get_node_names", "info_random_node", "scan"):
     assert hasattr(aerospike.Client, name), f"client missing {name}"
 
-# 5) Legacy methods we deliberately AVOID — warn if absent (expected) 
+# 5) Legacy methods we deliberately AVOID — warn if absent (expected)
 for gone in ("exists_many", "get_many", "select_many"):
     print(f"legacy {gone} present:", hasattr(aerospike.Client, gone))
 
@@ -1324,4 +1324,3 @@ Mirrors DESIGN §1.5, with corrections. All must be true:
   (`put`/`get`), `RemoteMetadata` in `…/v1/protocol.py`.
 - Aerospike client API (`batch_write`/`batch_read`/`info_random_node`/`put` TTL):
   official Python client reference (pin a version; legacy `*_many` removed).
-
