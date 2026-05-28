@@ -23,6 +23,7 @@ from tests.integration.helpers import (
     memory_obj_payload_bytes,
     meta_record_bins,
     num_tokens_for_payload_bytes,
+    on_github_actions,
     payload_pattern,
     put_pinned,
     sync_get,
@@ -30,6 +31,22 @@ from tests.integration.helpers import (
 )
 
 MIB = 1024 * 1024
+KIB = 1024
+
+
+def round_trip_payload_sizes() -> list[int]:
+    """Sizes exercised in CI; larger payloads need local RAM (see RUN_LARGE_INTEGRATION)."""
+    sizes = [512, 64 * KIB]
+    if not on_github_actions():
+        sizes.extend([1 * MIB, 4 * MIB])
+    return sizes
+
+
+def crash_test_target_bytes() -> int:
+    """Payload large enough to shard; keep small on GitHub-hosted runners (RAM)."""
+    if on_github_actions():
+        return 512 * KIB + 8192
+    return 2 * MIB
 
 requires_large = pytest.mark.skipif(
     os.environ.get("RUN_LARGE_INTEGRATION") != "1",
@@ -46,10 +63,7 @@ def test_discovery_clamps_segment_limits(connector):
     assert conn._resolved.max_segment_bytes == expected_max
 
 
-@pytest.mark.parametrize(
-    "target_bytes",
-    [512, 64 * 1024, 1 * MIB, 4 * MIB],
-)
+@pytest.mark.parametrize("target_bytes", round_trip_payload_sizes())
 def test_round_trip_size_matrix(chunk_id_counter, target_bytes):
     import asyncio
 
@@ -134,7 +148,7 @@ def test_pinned_survives_ttl_window(chunk_id_counter):
 def test_crash_before_meta_returns_none(chunk_id_counter):
     import asyncio
 
-    target = 2 * MIB
+    target = crash_test_target_bytes()
     conn, backend, _, _ = build_connector(
         num_tokens=num_tokens_for_payload_bytes(target)
     )

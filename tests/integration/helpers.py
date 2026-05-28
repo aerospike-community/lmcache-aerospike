@@ -22,6 +22,10 @@ from lmcache_aerospike import limits, serde
 from lmcache_aerospike.sharding import plan as shard_plan
 
 
+def on_github_actions() -> bool:
+    return os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+
+
 def aerospike_hosts() -> tuple[tuple[str, int], ...]:
     host = os.environ.get("AEROSPIKE_TEST_HOST", "127.0.0.1")
     port = int(os.environ.get("AEROSPIKE_TEST_PORT", "3000"))
@@ -47,7 +51,7 @@ def make_engine_config(
     ec: dict[str, Any] = {
         "chunk_size": 256,
         "local_cpu": True,
-        "max_local_cpu_size": 4.0,
+        "max_local_cpu_size": 1.0 if on_github_actions() else 4.0,
         "extra_config": {
             "save_chunk_meta": save_chunk_meta,
             **plugin_extra,
