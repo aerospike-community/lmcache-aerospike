@@ -46,7 +46,7 @@ jobs:
   integration:
     name: Integration (Aerospike CE)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -62,37 +62,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Start Aerospike CE
-        working-directory: docker
-        run: docker compose up -d
-
-      - name: Wait for Aerospike
+      - name: Start Aerospike CE (Docker)
         run: |
-          for attempt in $(seq 1 30); do
-            if python -c "
-import aerospike
-c = aerospike.client({'hosts': [('127.0.0.1', 3000)]})
-c.connect()
-info = c.info_random_node('namespace/lmcache')
-c.close()
-assert 'nsup-period=120' in info
-"; then
-              echo "Aerospike ready after attempt ${attempt}"
-              exit 0
-            fi
-            echo "Waiting for Aerospike (${attempt}/30)..."
-            sleep 2
-          done
-          echo "Aerospike did not become ready in time"
-          docker compose -f docker/docker-compose.yml logs
-          exit 1
+          chmod +x scripts/start_aerospike_ce.sh scripts/stop_aerospike_ce.sh
+          ./scripts/start_aerospike_ce.sh
+          docker ps --filter "name=lmcache-aerospike-ci"
+          cat .aerospike-ci.env
 
       - name: Integration tests
-        env:
-          RUN_INTEGRATION: "1"
-        run: pytest tests/integration -q
+        run: |
+          set -a
+          source .aerospike-ci.env
+          set +a
+          pytest tests/integration -v --tb=short
 
-      - name: Stop Aerospike
+      - name: Stop Aerospike CE
         if: always()
-        working-directory: docker
-        run: docker compose down -v
+        run: ./scripts/stop_aerospike_ce.sh
