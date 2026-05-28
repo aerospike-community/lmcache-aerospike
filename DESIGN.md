@@ -94,11 +94,11 @@ A subclass `LayerCacheEngineKey` adds an `@{layer_id}` segment after dtype for l
 
 Aerospike is a distributed, KV-first database. Records live in a `namespace.set` and are addressed by a user-supplied primary key. Each record has zero-or-more typed `bins` (columns). The primary index holds roughly **64 bytes per record per replica** in RAM and stores a pointer to the record on disk (or in DRAM, depending on storage engine). Operationally relevant constraints for this design:
 
-- **Per-record size cap is server-governed, not a fixed 8 MiB.** Aerospike's streaming-write-block ceiling is 8 MiB, but on Aerospike 7.1+ the effective per-record cap is governed by `max-record-size`, which **defaults to 1 MiB** and is configurable up to 8 MiB; on Aerospike <=7.0 the implicit cap is `write-block-size` (a power of 2 from 128 KiB to 8 MiB). This connector therefore **never hardcodes a cap** — it discovers it at startup (see [Section 4.3.6](#436-server-side-record-size-discovery)) and clamps segment sizes to it. Aerospike's *record-size* sweet spot for **ops-throughput-bound** workloads is roughly **1-10 KiB** (`[model-record-size-hardware-efficiency.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)`); larger records still work but stress device bandwidth, replication, and defrag. **LMCache is byte-throughput-bound, not ops-bound**, so this connector deliberately uses MB-scale segments (see [Section 4.3.4](#434-adaptive-shard-planner)). The two "sweet spots" answer different questions and do not conflict.
-- **TTL requires NSUP.** A write that carries a positive integer TTL is rejected with `AEROSPIKE_ERR_FAIL_FORBIDDEN` (error code 22, "Operation not allowed at this time") if the namespace has `nsup-period 0` (NSUP disabled). Special TTL values: `0` = use the namespace/set `default-ttl`; `-1` = never expire; `-2` = don't change void-time on update. See `[single-ttl-nsup-default-ttl.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)`.
-- **One client per process.** The Aerospike client maintains pools and cluster tend state; per-request client creation causes port exhaustion and latency spikes. See `[client-singleton.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-singleton.md)`.
-- **Batch APIs.** The version-stable batch surface is `batch_read(keys, bins)` (pass `bins=[]` for metadata-only existence checks) and `batch_write(BatchRecords([...]))` built from `aerospike_helpers.batch.records` (`Write`/`Read`/`Remove`). The legacy `exists_many` / `get_many` / `select_many` helpers were **removed** from the official Python client and are deliberately not used. Per-key result codes must be inspected because overall success does not imply every sub-operation succeeded. See `[batch-parallel-key-operations.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)`.
-- **No server-side joins.** Denormalize and embed; design schema around the primary-key access path. See `[model-access-paths-denormalization.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-access-paths-denormalization.md)`.
+- **Per-record size cap is server-governed, not a fixed 8 MiB.** Aerospike's streaming-write-block ceiling is 8 MiB, but on Aerospike 7.1+ the effective per-record cap is governed by `max-record-size`, which **defaults to 1 MiB** and is configurable up to 8 MiB; on Aerospike <=7.0 the implicit cap is `write-block-size` (a power of 2 from 128 KiB to 8 MiB). This connector therefore **never hardcodes a cap** — it discovers it at startup (see [Section 4.3.6](#436-server-side-record-size-discovery)) and clamps segment sizes to it. Aerospike's *record-size* sweet spot for **ops-throughput-bound** workloads is roughly **1-10 KiB** (`[model-record-size-hardware-efficiency.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)`); larger records still work but stress device bandwidth, replication, and defrag. **LMCache is byte-throughput-bound, not ops-bound**, so this connector deliberately uses MB-scale segments (see [Section 4.3.4](#434-adaptive-shard-planner)). The two "sweet spots" answer different questions and do not conflict.
+- **TTL requires NSUP.** A write that carries a positive integer TTL is rejected with `AEROSPIKE_ERR_FAIL_FORBIDDEN` (error code 22, "Operation not allowed at this time") if the namespace has `nsup-period 0` (NSUP disabled). Special TTL values: `0` = use the namespace/set `default-ttl`; `-1` = never expire; `-2` = don't change void-time on update. See `[single-ttl-nsup-default-ttl.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)`.
+- **One client per process.** The Aerospike client maintains pools and cluster tend state; per-request client creation causes port exhaustion and latency spikes. See `[client-singleton.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-singleton.md)`.
+- **Batch APIs.** The version-stable batch surface is `batch_read(keys, bins)` (pass `bins=[]` for metadata-only existence checks) and `batch_write(BatchRecords([...]))` built from `aerospike_helpers.batch.records` (`Write`/`Read`/`Remove`). The legacy `exists_many` / `get_many` / `select_many` helpers were **removed** from the official Python client and are deliberately not used. Per-key result codes must be inspected because overall success does not imply every sub-operation succeeded. See `[batch-parallel-key-operations.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)`.
+- **No server-side joins.** Denormalize and embed; design schema around the primary-key access path. See `[model-access-paths-denormalization.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-access-paths-denormalization.md)`.
 - **CE limitations.** Community Edition does not support durable deletes, Strong Consistency mode, on-disk compression, or XDR; the design must be correct without them.
 
 ### 2.3 Surface-to-implementation mapping
@@ -165,8 +165,8 @@ Before committing to Phase 1's choice, every plausible integration surface was e
 | Aerospike Graph Service (AGS)                      | LMCache's data model is hashed token chunks and optional cache-location routing. Lookup tables fit KV/document storage; graph traversal adds no value.                                                                                                                                                            |
 | Replace Mooncake/NIXL transport with Aerospike     | RDMA-class transport between prefill/decode workers is a different problem with different SLAs. Aerospike is correctly positioned as the durable/shared tier, not the transport.                                                                                                                                  |
 | Replace LMCache's GPU/CPU tiers                    | LMCache owns HBM and DRAM tiers. We only target the remote tier.                                                                                                                                                                                                                                                  |
-| Use Aerospike CDTs (lists/maps) for chunk segments | Segments are large opaque byte blobs accessed sequentially. CDTs add server-side overhead with no traversal benefit; flat segment records are simpler and faster. See `[cdt-bounded-collections.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/cdt-bounded-collections.md)`. |
-| Use Aerospike secondary indexes for prefix lookup  | LMCache lookup is by exact `CacheEngineKey`. Secondary indexes are unnecessary and would harm write throughput. See `[query-secondary-index-discipline.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/query-secondary-index-discipline.md)`.                                 |
+| Use Aerospike CDTs (lists/maps) for chunk segments | Segments are large opaque byte blobs accessed sequentially. CDTs add server-side overhead with no traversal benefit; flat segment records are simpler and faster. See `[cdt-bounded-collections.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/cdt-bounded-collections.md)`. |
+| Use Aerospike secondary indexes for prefix lookup  | LMCache lookup is by exact `CacheEngineKey`. Secondary indexes are unnecessary and would harm write throughput. See `[query-secondary-index-discipline.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/query-secondary-index-discipline.md)`.                                 |
 | Embed all segments as a CDT list under one key     | Defeats Aerospike's 8 MiB record cap and concentrates load on a single hot record.                                                                                                                                                                                                                                |
 
 
@@ -252,7 +252,7 @@ calls `super().__init__(config, metadata)` first (this initializes `self.save_ch
 
 #### 4.2.3 Singleton client
 
-`AerospikeClientHolder` is the only place that constructs `aerospike.client(...)`. It is keyed by a tuple of `(hosts, namespace, tls_name)` and reference-counted: each `AerospikeRemoteConnector` increments on construction and decrements on `close()`; the underlying `aerospike.Client` is destroyed only when the count reaches zero. This makes per-process singleton behavior the default (`[client-singleton.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-singleton.md)`) while still supporting multiple plugin instances (`aerospike.primary`, `aerospike.backup`) talking to distinct clusters.
+`AerospikeClientHolder` is the only place that constructs `aerospike.client(...)`. It is keyed by a tuple of `(hosts, namespace, tls_name)` and reference-counted: each `AerospikeRemoteConnector` increments on construction and decrements on `close()`; the underlying `aerospike.Client` is destroyed only when the count reaches zero. This makes per-process singleton behavior the default (`[client-singleton.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-singleton.md)`) while still supporting multiple plugin instances (`aerospike.primary`, `aerospike.backup`) talking to distinct clusters.
 
 #### 4.2.4 Async strategy
 
@@ -314,7 +314,7 @@ def segment_key(ns: str, set_: str, ck: ..., i: int) -> aerospike_key
 def segment_keys(ns: str, set_: str, ck: ..., nseg: int) -> list[aerospike_key]
 ```
 
-User keys passed to Aerospike are byte strings derived from `ck.to_string()` with the `|m` or `|s|{i}` suffix. The Aerospike default of "store the digest, not the key" still applies; `policy.send_key` defaults to `False` (see `[policy-send-key.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-send-key.md)`) because the logical key is already fully encoded in the digest input and storing it again wastes record space.
+User keys passed to Aerospike are byte strings derived from `ck.to_string()` with the `|m` or `|s|{i}` suffix. The Aerospike default of "store the digest, not the key" still applies; `policy.send_key` defaults to `False` (see `[policy-send-key.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-send-key.md)`) because the logical key is already fully encoded in the digest input and storing it again wastes record space.
 
 #### 4.3.4 Adaptive shard planner
 
@@ -494,7 +494,7 @@ Each subsection mirrors the corresponding method in [`base_connector.py`](https:
      client.put(meta_key, bins | {"state": "ready"}, meta=ttl_meta, policy=write_policy)
      ```
 
-     `Client.batch_write` takes a single `BatchRecords` object built from `aerospike_helpers.batch.records` — **not** a list of `(key, bins, meta)` tuples. Per-key results must be inspected (`[batch-parallel-key-operations.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)`).
+     `Client.batch_write` takes a single `BatchRecords` object built from `aerospike_helpers.batch.records` — **not** a list of `(key, bins, meta)` tuples. Per-key results must be inspected (`[batch-parallel-key-operations.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)`).
 - **TTL (⚠ set in one place):** `ttl_for(key)` returns `-1` if pinned, else `aerospike_config.default_ttl_seconds` (`0` = namespace `default-ttl`, `-2` = don't update void-time). The actual mechanism is centralized in a single `_apply_ttl` helper because `meta={"ttl": N}` is valid only on Aerospike Python client `< 19.1.0`; from `19.1.0` TTL moves to the write policy. The connector pins the client version (see [Section 4.1](#41-package-layout)) and the helper is the only code that touches the version-sensitive API.
 - **Memory:** after `put` returns, LMCache decrements the `MemoryObj` refcount; the connector must not retain references past return.
 - **Policy:** `write_policy` with `key=POLICY_KEY_DIGEST`, `commit_level=POLICY_COMMIT_LEVEL_ALL` (CE default; configurable down to `MASTER` via `extra_config`); `exists=POLICY_EXISTS_IGNORE` (overwrite-always); `gen=POLICY_GEN_IGNORE` (no CAS).
@@ -506,7 +506,7 @@ Each subsection mirrors the corresponding method in [`base_connector.py`](https:
 
 - **Purpose:** Parallel `get` for many keys.
 - **Implementation:** bounded `asyncio.Semaphore(aerospike_config.batch_max_in_flight)`; gather `self.get(k)` for each key under the semaphore; return results in the same order. Each `get` is independent so existing single-key logic applies.
-- **No coalescing required:** LMCache passes distinct keys (per `[batch-parallel-key-operations.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)`, the connector still de-duplicates defensively before issuing requests).
+- **No coalescing required:** LMCache passes distinct keys (per `[batch-parallel-key-operations.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)`, the connector still de-duplicates defensively before issuing requests).
 
 #### 4.4.6 `def support_batched_put(self) -> bool` -> True and `async def batched_put(self, keys, memory_objs)`
 
@@ -517,7 +517,7 @@ Each subsection mirrors the corresponding method in [`base_connector.py`](https:
 - **Purpose:** Consecutive-prefix-length count. This is the **critical** LMCache prefetch primitive.
 - **Implementation (⚠ corrected — `exists_many` is removed in current clients):** synchronous `brs = Client.batch_read([meta_key(k) for k in keys], [])`. Passing an **empty bin list** returns metadata only (each `BatchRecord.record` is a `(key, meta)` 2-tuple). Iterate `brs.batch_records` **in original key order**; count consecutive entries with `rec.result == 0` (record found) and return the count at the first miss. `Client.exists_many` / `get_many` / `select_many` were removed from the official Python client (present in 7.0.x, gone in current releases); `batch_read` is the version-stable replacement.
 - **State corner case:** `batch_read` with `bins=[]` returns no `state` bin. Phase 1 treats any existing meta record as `ready` because the atomicity protocol writes meta last (with `state="ready"`). An in-flight writer can briefly cause `contains` true / `get` miss; LMCache already handles miss-after-contain by re-prefilling.
-- **Coalescing:** the consecutive-prefix semantics operate on the **original order**, so do not reorder; you may still dedupe identical adjacent keys defensively per `[batch-parallel-key-operations.md](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)`.
+- **Coalescing:** the consecutive-prefix semantics operate on the **original order**, so do not reorder; you may still dedupe identical adjacent keys defensively per `[batch-parallel-key-operations.md](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)`.
 
 #### 4.4.8 `def support_batched_async_contains(self) -> bool` -> True and `async def batched_async_contains(self, lookup_id, keys, pin=False) -> int`
 
@@ -637,18 +637,18 @@ Validation runs in `AerospikeConfig.from_extra_config(...)` at adapter construct
 
 These rules come from `~/github/agent-skills/skills/aerospike-development/references/` and are not optional; reviewers should expect to see them enforced in code review.
 
-- **Singleton client per process** ([`client-singleton.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-singleton.md)). One `aerospike.Client` per `(hosts, namespace, tls_name)` triple, ref-counted by `AerospikeClientHolder`. Per-request client creation is a defect.
-- **One key per batch entry** ([`batch-parallel-key-operations.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)). Dedupe inputs on the client; never repeat the same key. Multi-operation per key (rare in this connector) goes through `operate` rather than duplicate batch entries.
+- **Singleton client per process** ([`client-singleton.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-singleton.md)). One `aerospike.Client` per `(hosts, namespace, tls_name)` triple, ref-counted by `AerospikeClientHolder`. Per-request client creation is a defect.
+- **One key per batch entry** ([`batch-parallel-key-operations.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)). Dedupe inputs on the client; never repeat the same key. Multi-operation per key (rare in this connector) goes through `operate` rather than duplicate batch entries.
 - **Inspect per-key batch results.** Batch APIs may report top-level success while individual entries fail (`KEY_BUSY`, `RECORD_NOT_FOUND`, generation, policy errors). The connector walks every entry and reports per-entry status.
-- **TTL alignment** ([`single-ttl-nsup-default-ttl.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)). When `default_ttl_seconds > 0` the Aerospike namespace **must** have `nsup-period > 0`. Otherwise the first write fails with `AEROSPIKE_ERR_FAIL_FORBIDDEN` (code 22). The connector detects this on first put and surfaces an actionable error pointing at the namespace config. Pinned keys use TTL `-1` (and require the namespace to allow it).
-- **Send-key off by default** ([`policy-send-key.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-send-key.md)). The logical key is fully encoded into the digest input; storing it again wastes record space. Override with `extra_config.aerospike.send_key=true` if ops want it for debugging.
-- **Record sizing trade-off** ([`model-record-size-hardware-efficiency.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)). The Aerospike sweet spot is 1-10 KiB; we deliberately target 4 MiB segments because LMCache bytes/s dominates ops/s. This consciously trades index-RAM efficiency for fewer round trips on the hot KV path. Capacity planning must include device throughput (not just IOPS) for `payload_bytes_per_chunk * chunks_per_second`. If a deployment is device-saturated, the **fallback tuning recipe** is:
+- **TTL alignment** ([`single-ttl-nsup-default-ttl.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)). When `default_ttl_seconds > 0` the Aerospike namespace **must** have `nsup-period > 0`. Otherwise the first write fails with `AEROSPIKE_ERR_FAIL_FORBIDDEN` (code 22). The connector detects this on first put and surfaces an actionable error pointing at the namespace config. Pinned keys use TTL `-1` (and require the namespace to allow it).
+- **Send-key off by default** ([`policy-send-key.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-send-key.md)). The logical key is fully encoded into the digest input; storing it again wastes record space. Override with `extra_config.aerospike.send_key=true` if ops want it for debugging.
+- **Record sizing trade-off** ([`model-record-size-hardware-efficiency.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)). The Aerospike sweet spot is 1-10 KiB; we deliberately target 4 MiB segments because LMCache bytes/s dominates ops/s. This consciously trades index-RAM efficiency for fewer round trips on the hot KV path. Capacity planning must include device throughput (not just IOPS) for `payload_bytes_per_chunk * chunks_per_second`. If a deployment is device-saturated, the **fallback tuning recipe** is:
   1. Halve `target_segment_bytes` to 2 MiB; observe throughput.
   2. If still saturated, halve again to 1 MiB.
   3. Never go below `min_segment_bytes` (default 64 KiB); below that, index RAM becomes the bottleneck.
 - **Server-driven hard ceiling** ([Section 4.3.6](#436-server-side-record-size-discovery)). The connector queries the namespace's `max-record-size` (Aerospike 7.1+) or `write-block-size` (Aerospike <=7.0) at startup, derives `effective_max_segment_bytes`, and logs the discovered values. Operators do **not** set `max_segment_bytes` to "stay safely under 8 MiB" by hand; the framework picks the right cap for the actual cluster. Operator overrides are still allowed for benchmarking but are clamped to the server value with a WARNING.
-- **No CDTs** for segment data ([`cdt-bounded-collections.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/cdt-bounded-collections.md)). Flat records with one `b` bin per segment outperform a single record with a CDT list of bytes blobs, and avoid the 8 MiB cap problem.
-- **No secondary indexes** ([`query-secondary-index-discipline.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/query-secondary-index-discipline.md)). All access is by exact primary key.
+- **No CDTs** for segment data ([`cdt-bounded-collections.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/cdt-bounded-collections.md)). Flat records with one `b` bin per segment outperform a single record with a CDT list of bytes blobs, and avoid the 8 MiB cap problem.
+- **No secondary indexes** ([`query-secondary-index-discipline.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/query-secondary-index-discipline.md)). All access is by exact primary key.
 - **CE-only constraints (explicit).**
   - `durable_delete=True` is EE-only; Phase 1 uses regular delete. Cache resurrection on cold restart is acceptable for KV-cache content.
   - Strong Consistency (SC) namespace mode is EE-only; Phase 1 assumes AP namespaces and tolerates the rare partition window with the existing atomicity protocol (meta-last write).
@@ -875,30 +875,30 @@ These are deliberately not answered in this design. Each is a follow-up that sho
 - [Storage backends index](https://docs.lmcache.ai/kv_cache/storage_backends/index.html).
 - [LMCache Controller](https://docs.lmcache.ai/kv_cache_management/index.html).
 
-### 8.3 Aerospike modeling rules (local agent-skills)
+### 8.3 Aerospike modeling rules ([agent-skills](https://github.com/aerospike/agent-skills))
 
-- [`client-singleton.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-singleton.md)
-- [`client-pools-warmup.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-pools-warmup.md)
-- [`client-direct-node-access.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/client-direct-node-access.md)
-- [`policy-client-defaults.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-client-defaults.md)
-- [`policy-reuse-timeouts-retries.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-reuse-timeouts-retries.md)
-- [`policy-send-key.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-send-key.md)
-- [`policy-write-commit-level.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-write-commit-level.md)
-- [`policy-generation-cas.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-generation-cas.md)
-- [`policy-replace-whole-record.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-replace-whole-record.md)
-- [`policy-read-replica-consistency.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/policy-read-replica-consistency.md)
-- [`single-record-operations.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-record-operations.md)
-- [`single-ttl-expiration-retention.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-ttl-expiration-retention.md)
-- [`single-ttl-nsup-default-ttl.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)
-- [`single-delete-durable-deletes.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/single-delete-durable-deletes.md)
-- [`model-access-paths-denormalization.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-access-paths-denormalization.md)
-- [`model-record-size-hardware-efficiency.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)
-- [`model-hot-keys.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/model-hot-keys.md)
-- [`cdt-bounded-collections.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/cdt-bounded-collections.md)
-- [`batch-parallel-key-operations.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/batch-parallel-key-operations.md)
-- [`binop-operate-atomicity.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/binop-operate-atomicity.md)
-- [`query-secondary-index-discipline.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/query-secondary-index-discipline.md)
-- [`sec-client-tls-auth.md`](file:///home/lyndon/github/agent-skills/skills/aerospike-development/references/sec-client-tls-auth.md)
+- [`client-singleton.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-singleton.md)
+- [`client-pools-warmup.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-pools-warmup.md)
+- [`client-direct-node-access.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/client-direct-node-access.md)
+- [`policy-client-defaults.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-client-defaults.md)
+- [`policy-reuse-timeouts-retries.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-reuse-timeouts-retries.md)
+- [`policy-send-key.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-send-key.md)
+- [`policy-write-commit-level.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-write-commit-level.md)
+- [`policy-generation-cas.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-generation-cas.md)
+- [`policy-replace-whole-record.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-replace-whole-record.md)
+- [`policy-read-replica-consistency.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/policy-read-replica-consistency.md)
+- [`single-record-operations.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-record-operations.md)
+- [`single-ttl-expiration-retention.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-ttl-expiration-retention.md)
+- [`single-ttl-nsup-default-ttl.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-ttl-nsup-default-ttl.md)
+- [`single-delete-durable-deletes.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/single-delete-durable-deletes.md)
+- [`model-access-paths-denormalization.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-access-paths-denormalization.md)
+- [`model-record-size-hardware-efficiency.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-record-size-hardware-efficiency.md)
+- [`model-hot-keys.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/model-hot-keys.md)
+- [`cdt-bounded-collections.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/cdt-bounded-collections.md)
+- [`batch-parallel-key-operations.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/batch-parallel-key-operations.md)
+- [`binop-operate-atomicity.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/binop-operate-atomicity.md)
+- [`query-secondary-index-discipline.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/query-secondary-index-discipline.md)
+- [`sec-client-tls-auth.md`](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-development/references/sec-client-tls-auth.md)
 
 ### 8.4 Aerospike core documentation
 
@@ -906,7 +906,7 @@ These are deliberately not answered in this design. Each is a follow-up that sho
 - [Data model and record sizing](https://aerospike.com/docs/develop/data-modeling/record-sizing).
 - [Namespace retention / NSUP](https://aerospike.com/docs/database/manage/namespace/retention).
 - [Python client](https://aerospike-python-client.readthedocs.io/).
-- [Aerospike getting started skill](file:///home/lyndon/github/agent-skills/skills/aerospike-getting-started/SKILL.md) - Docker single-node CE setup for integration tests.
+- [Aerospike getting started skill](https://github.com/aerospike/agent-skills/blob/main/skills/aerospike-getting-started/SKILL.md) - Docker single-node CE setup for integration tests.
 
 ### 8.5 Strategic input
 
