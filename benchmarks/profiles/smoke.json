@@ -1,0 +1,12 @@
+{
+  "description": "Quick KV hot-path sanity (~30s). Requires Aerospike CE (start_aerospike_ce.sh).",
+  "workload": "kv_hotpath",
+  "connection_string": "aerospike://127.0.0.1:3000/lmcache?set=bench_eco_kv&num_tokens=128",
+  "queries_per_second": 20,
+  "scheduler_thread_count": 1,
+  "worker_thread_count": 4,
+  "runtime_per_function": 5,
+  "workload_params": {
+    "key_count": 16
+  }
+}

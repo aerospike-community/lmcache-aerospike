@@ -1,0 +1,12 @@
+{
+  "description": "4 MiB target payload put/get (multi-segment on most CE nodes).",
+  "workload": "kv_chunk",
+  "connection_string": "aerospike://127.0.0.1:3000/lmcache?set=bench_eco_kv&target_segment_bytes=4194304",
+  "queries_per_second": 8,
+  "scheduler_thread_count": 1,
+  "worker_thread_count": 2,
+  "runtime_per_function": 5,
+  "workload_params": {
+    "target_payload_bytes": 4194304
+  }
+}

@@ -1,0 +1,5 @@
+# Ecosystem harness (benchmarks/run.py). Not part of the PyPI wheel.
+# Install package first: pip install -e .
+git+https://github.com/aerospike-community/ai-ecosystem-benchmark.git
+pytest>=7
+pytest-benchmark>=4
