@@ -113,7 +113,7 @@ pytest tests/integration -v
 
 Large payloads (16–64 MiB): `RUN_LARGE_INTEGRATION=1`.
 
-**L2 plugin** (`test_l2_plugin_e2e.py`): requires [LMCache](https://github.com/LMCache/LMCache) `dev` with multiprocess L2 APIs. Clone into `LMCache/` (or set `LMCACHE_SRC`). Local install matching CI: `./scripts/ci_integration_install.sh`.
+**L2 plugin** (`test_l2_plugin_*.py`): live tests against Aerospike CE via `PluginL2AdapterConfig`, aligned with LMCache’s meaningful upstream patterns (`test_mock_l2_adapter`, RESP L2 integration, `lmc_external_l2_adapter`) — not LMCache’s full mocked suite. Requires [LMCache](https://github.com/LMCache/LMCache) `dev` in `LMCache/` (or `LMCACHE_SRC`). Install: `./scripts/ci_integration_install.sh`.
 
 ## Benchmarks
 
