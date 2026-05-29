@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import importlib
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+l2_mod = importlib.import_module("lmcache_aerospike.l2_plugin")
+if not l2_mod.L2_MP_AVAILABLE:
+    pytest.skip(
+        "LMCache multiprocess L2 APIs (L2StoreResult) not in this lmcache build",
+        allow_module_level=True,
+    )
+
 pytest.importorskip("lmcache.native_storage_ops")
-import torch
 
 from lmcache.v1.distributed.api import ObjectKey
 

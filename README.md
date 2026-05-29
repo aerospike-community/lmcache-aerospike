@@ -88,7 +88,7 @@ extra_config:
 }
 ```
 
-Phase 2 uses the same Aerospike record layout as Phase 1. L2 requires LMCache built with `native_storage_ops` (standard pip wheels).
+Phase 2 uses the same Aerospike record layout as Phase 1. The **storage plugin** works with PyPI `lmcache` 0.4.x. The **L2 plugin** needs LMCache multiprocess L2 APIs (`L2StoreResult` on `lmcache.v1.distributed.internal_api`), which are not in PyPI 0.4.5 yet — use an LMCache `dev` build (or a future release) plus `native_storage_ops`.
 
 ## Compatibility
 

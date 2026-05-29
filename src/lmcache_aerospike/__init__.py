@@ -19,11 +19,16 @@ def __getattr__(name: str):
 
         return AerospikeStoragePlugin
     if name == "AerospikeL2Plugin":
-        from lmcache_aerospike.l2_plugin import AerospikeL2Plugin
+        from lmcache_aerospike.l2_plugin import AerospikeL2Plugin, _require_l2_mp
 
+        _require_l2_mp()
         return AerospikeL2Plugin
     if name == "AerospikeL2PluginConfig":
-        from lmcache_aerospike.l2_plugin import AerospikeL2PluginConfig
+        from lmcache_aerospike.l2_plugin import (
+            AerospikeL2PluginConfig,
+            _require_l2_mp,
+        )
 
+        _require_l2_mp()
         return AerospikeL2PluginConfig
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
