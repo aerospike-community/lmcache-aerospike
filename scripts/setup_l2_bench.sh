@@ -20,8 +20,16 @@ if [[ ! -d "${LMCACHE_SRC}" ]]; then
   exit 1
 fi
 
-echo "==> Installing lmcache-aerospike (editable)"
-"${PYTHON}" -m pip install -e .
+if [[ "${LMCACHE_AEROSPIKE_SKIP_NATIVE_DEPS:-0}" != "1" ]]; then
+  echo "==> Aerospike C client + native extension prerequisites"
+  "${ROOT}/scripts/build_libaerospike.sh"
+  # shellcheck source=/dev/null
+  source "${ROOT}/.deps/aerospike-client-c.env"
+fi
+
+echo "==> Installing lmcache-aerospike (editable, native extension when deps present)"
+LMCACHE_AEROSPIKE_FORCE_NATIVE="${LMCACHE_AEROSPIKE_FORCE_NATIVE:-1}" \
+  "${PYTHON}" -m pip install -e . --no-build-isolation
 
 echo "==> Installing LMCache from ${LMCACHE_SRC} (editable, --no-build-isolation)"
 if ! "${PYTHON}" -c "import torch" 2>/dev/null; then
@@ -33,8 +41,8 @@ NO_GPU_EXT="${NO_GPU_EXT:-1}" "${PYTHON}" -m pip install -e "${LMCACHE_SRC}" --n
 echo "==> Installing L2 bench harness requirements"
 "${PYTHON}" -m pip install -r benchmarks/l2/requirements.txt
 
-echo "==> Preflight (Aerospike plugin + RESP extension)"
-"${PYTHON}" scripts/preflight_l2_bench.py --resp
+echo "==> Preflight (Aerospike plugin + native + RESP extension)"
+"${PYTHON}" scripts/preflight_l2_bench.py --resp --native-aerospike
 
 echo ""
 echo "Setup complete. When ready to benchmark:"

@@ -26,6 +26,7 @@ htmlcov/
 .claude/
 # Local LMCache dev clone for L2 integration tests / CI layout (see README).
 LMCache/
+.deps/
 benchmarks/results/
 benchmarks/l2/results/
 benchmarks/l2/.env.local

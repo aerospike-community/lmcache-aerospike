@@ -17,14 +17,21 @@ Use **`compare.sh`** to run the **same profile** against Aerospike native and Re
 | **LMCache `dev`** | PyPI `lmcache` 0.4.x has no `bench l2` or `L2StoreResult`. |
 | **LMCache built with `lmcache_redis`** | RESP/Redis L2 (`pip install -e "$LMCACHE_SRC" --no-build-isolation`). |
 | **This package** (`pip install -e .`) | Aerospike `type: plugin` adapter. |
-| **This package built with native deps** | Aerospike `type: native_plugin` adapter (`pybind11`, LMCache C++ headers, `libaerospike-dev`). |
+| **This package built with native deps** | Aerospike `type: native_plugin` adapter (`./scripts/build_libaerospike.sh` then `pip install -e .`). |
 | **torch + openai** | Bench CLI payloads (`benchmarks/l2/requirements.txt`). |
 | **Docker** | Aerospike CE + Redis bench containers. |
 
-For a local Aerospike C client install outside `/usr`, export
-`AEROSPIKE_INCLUDE_DIR` and `AEROSPIKE_LIBRARY_DIR` before reinstalling this
-package. Use `LMCACHE_AEROSPIKE_FORCE_NATIVE=1 pip install -e .` to fail fast if
-the native extension is not built.
+Native build (no sudo; downloads Aerospike C client + `libyaml` debs into `.deps/`):
+
+```bash
+./scripts/build_libaerospike.sh
+source .deps/aerospike-client-c.env
+LMCACHE_AEROSPIKE_FORCE_NATIVE=1 pip install -e . --no-build-isolation
+```
+
+`setup_l2_bench.sh` runs the steps above by default. Set `LMCACHE_AEROSPIKE_SKIP_NATIVE_DEPS=1`
+to skip when you already have system `libaerospike-dev`. For non-standard installs, export
+`AEROSPIKE_INCLUDE_DIR` and `AEROSPIKE_LIBRARY_DIR` before `pip install -e .`.
 
 ## One-time setup
 
@@ -57,7 +64,9 @@ set -a && source .aerospike-ci.env && source .redis-bench.env && set +a
 ```bash
 ./benchmarks/l2/compare.sh
 ./benchmarks/l2/compare.sh --profile stress
+./benchmarks/l2/compare.sh --profile extended
 ./benchmarks/l2/compare.sh --backend aerospike  # Python L2 plugin vs Redis
+./benchmarks/l2/summarize_results.sh benchmarks/l2/results/<timestamp>-stress
 ```
 
 Logs land under `benchmarks/l2/results/<timestamp>-<profile>/` (`aerospike-native.log` or `aerospike.log`, plus `resp.log`). Each file contains the full `lmcache bench l2` summary blocks for store / lookup / load.
@@ -77,10 +86,13 @@ Logs land under `benchmarks/l2/results/<timestamp>-<profile>/` (`aerospike-nativ
 
 All backends use the **same** `profiles/<name>.env` → `BENCH_L2_EXTRA_ARGS` (`--num-keys`, `--in-flight`, `--data-size-kb`, `--rounds`, `--warmup-rounds`). Only the adapter JSON and backing service differ.
 
+**Keys per round** = `--in-flight` × `--num-keys` (each in-flight slot submits a full batch of `num-keys`).
+
 | Profile | Defaults |
 | ------- | -------- |
 | `smoke` | 32 keys/submit, in-flight 1, 256 KiB/key, 1 warmup + 1 measured round, **lookup hit rate 1.0** (same keys as store) |
-| `stress` | Same as smoke but in-flight 4, 512 KiB/key, 5 measured rounds |
+| `stress` | 32 keys, in-flight 4, 512 KiB/key, 5 measured rounds |
+| `extended` | Same batch as stress (128 keys/round), 10 measured rounds, 2 warmup |
 | `miss_lookup` | Upstream default: `--lookup-max-hit-rate 0.0` (lookup only touches keys that were never stored) |
 
 LMCache’s bench default is `lookup-max-hit-rate 0.0`: lookup keys start at index `total_run_keys`, disjoint from store/load. **`found=0/32` after a successful store is expected** with that default, not an adapter bug.

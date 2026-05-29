@@ -16,6 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 L2_DIR="${ROOT}/benchmarks/l2"
 RUN="${L2_DIR}/run.sh"
+export LMCACHE_BENCH_PYTHON="${LMCACHE_BENCH_PYTHON:-}"
 PROFILE="smoke"
 AEROSPIKE_BACKEND="aerospike-native"
 EXTRA=()
@@ -95,6 +96,11 @@ if [[ "${AEROSPIKE_BACKEND}" == "aerospike-native" ]]; then
 else
   echo "[1/2] Aerospike Python (AerospikeL2Plugin / plugin) ..."
 fi
+PYTHON="${LMCACHE_BENCH_PYTHON:-python3}"
+if [[ -x "${ROOT}/.venv/bin/python" ]]; then
+  PYTHON="${LMCACHE_BENCH_PYTHON:-${ROOT}/.venv/bin/python}"
+fi
+"${PYTHON}" "${ROOT}/scripts/truncate_aerospike_bench_sets.py"
 "${RUN}" --backend "${AEROSPIKE_BACKEND}" --profile "${PROFILE}" "${EXTRA[@]}" 2>&1 | tee "${RESULTS_DIR}/${AEROSPIKE_BACKEND}.log"
 
 echo ""

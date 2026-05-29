@@ -98,11 +98,18 @@ Phase 3 is loaded through LMCache's `native_plugin` adapter and keeps the Phase
 are reserved for a benchmark-proven future optimization, or for a coordinated
 migration of Phase 1, Phase 2, and Phase 3 together.
 
-The native extension is built when `libaerospike` development headers and
-library are available. For local, non-system installs, set
-`AEROSPIKE_INCLUDE_DIR` and `AEROSPIKE_LIBRARY_DIR` before `pip install -e .`;
-set `LMCACHE_AEROSPIKE_FORCE_NATIVE=1` to fail the build if native prerequisites
-are missing.
+Build the Aerospike C client locally (no root required), then install this package
+with the native extension:
+
+```bash
+./scripts/build_libaerospike.sh
+source .deps/aerospike-client-c.env
+LMCACHE_AEROSPIKE_FORCE_NATIVE=1 pip install -e . --no-build-isolation
+```
+
+For system packages (`libaerospike-dev`, `libyaml-dev`), set `AEROSPIKE_INCLUDE_DIR` /
+`AEROSPIKE_LIBRARY_DIR` if needed. Use `LMCACHE_AEROSPIKE_FORCE_NATIVE=1` to fail the
+build when prerequisites are missing.
 
 ```json
 {
