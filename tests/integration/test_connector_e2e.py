@@ -6,8 +6,10 @@ import os
 import time
 
 import pytest
+import torch
 from aerospike_helpers.batch import records as br
 from aerospike_helpers.operations import operations as op
+from lmcache.utils import LayerCacheEngineKey
 
 from lmcache_aerospike import keys as K
 from lmcache_aerospike import limits
@@ -221,3 +223,36 @@ def test_multi_set_isolation(chunk_id_counter):
     finally:
         asyncio.run(close_connector(conn_a))
         asyncio.run(close_connector(conn_b))
+
+
+def test_layerwise_round_trip(chunk_id_counter):
+    """LayerCacheEngineKey uses |layer_id| in user key; save_chunk_meta stores md bin."""
+    import asyncio
+
+    conn, backend, _, _ = build_connector(
+        set_name="it_layerwise",
+        save_chunk_meta=True,
+        num_tokens=num_tokens_for_payload_bytes(512),
+    )
+    try:
+        chunk_len = chunk_byte_size(backend.metadata)
+        payload = payload_pattern(chunk_len)
+        key = LayerCacheEngineKey(
+            model_name="integration-test",
+            world_size=1,
+            worker_id=0,
+            chunk_hash=chunk_id_counter(),
+            dtype=torch.float16,
+            layer_id=3,
+        )
+        assert key.to_string().endswith("@3")
+        sync_put(conn, key, make_memory_obj(backend, payload))
+        bins = meta_record_bins(conn, key)
+        assert bins is not None
+        assert "md" in bins
+        got = sync_get(conn, key)
+        assert got is not None
+        assert memory_obj_payload_bytes(got, chunk_len) == payload
+        got.ref_count_down()
+    finally:
+        asyncio.run(close_connector(conn))

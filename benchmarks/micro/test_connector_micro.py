@@ -1,13 +1,4 @@
-"""pytest-benchmark harness for connector put/get (S15).
-
-Uses FakeClient (no network). Run:
-
-  RUN_BENCH=1 pytest tests/bench -v --benchmark-only
-
-Optional live Aerospike:
-
-  RUN_BENCH=1 RUN_BENCH_LIVE=1 pytest tests/bench -v -k live
-"""
+"""pytest-benchmark micro harness (no Aerospike). See benchmarks/micro/README.md."""
 
 from __future__ import annotations
 
@@ -18,7 +9,7 @@ from lmcache.utils import CacheEngineKey
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BENCH") != "1",
-    reason="Set RUN_BENCH=1 to run performance benchmarks",
+    reason="Set RUN_BENCH=1 to run micro benchmarks",
 )
 
 LIVE = os.environ.get("RUN_BENCH_LIVE") == "1"
@@ -60,7 +51,6 @@ def test_get_miss(benchmark, bench_connector):
 
 
 def test_segment_size_sweep(benchmark, segment_sweep_connector):
-    """Sensitivity check across target_segment_bytes (1–8 MiB)."""
     conn, key, mo, target, payload_size, _loop = segment_sweep_connector
     conn._put_sync_impl(key, mo)
 
@@ -78,7 +68,8 @@ def test_segment_size_sweep(benchmark, segment_sweep_connector):
 
 @pytest.mark.skipif(not LIVE, reason="Set RUN_BENCH_LIVE=1 with Aerospike CE up")
 def test_live_put_get(benchmark):
-    """Optional bench against scripts/start_aerospike_ce.sh (not run in CI)."""
+    import asyncio
+
     from tests.integration.helpers import (
         build_connector,
         chunk_byte_size,
@@ -87,8 +78,6 @@ def test_live_put_get(benchmark):
         make_memory_obj,
         payload_pattern,
     )
-
-    import asyncio
 
     conn, backend, _, _ = build_connector(num_tokens=128)
     try:

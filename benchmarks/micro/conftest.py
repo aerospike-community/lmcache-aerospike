@@ -1,4 +1,4 @@
-"""Fixtures for in-process connector benchmarks (FakeClient, no Aerospike)."""
+"""Fixtures for in-process connector micro-benchmarks (FakeClient)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,6 @@ def _resolved(target_segment_bytes: int) -> ResolvedLimits:
 
 @pytest.fixture
 def bench_connector(fake_client: FakeClient, request):
-    """Connector with configurable target_segment_bytes via indirect param."""
     target = getattr(request, "param", 4 * 1024 * 1024)
     resolved = _resolved(target)
     backend = FakeLocalCPUBackend(alloc_size=8 * 1024 * 1024)

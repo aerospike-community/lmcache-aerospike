@@ -85,11 +85,17 @@ Large payloads (16–64 MiB): `RUN_LARGE_INTEGRATION=1`.
 
 ## Benchmarks
 
+Benchmark code lives under **`benchmarks/`** (not included in the PyPI wheel).
+
 ```bash
-RUN_BENCH=1 pytest tests/bench -v --benchmark-only
+pip install -r benchmarks/requirements.txt
+./scripts/start_aerospike_ce.sh && source .aerospike-ci.env
+python benchmarks/run.py --profile smoke
 ```
 
-See [`tests/bench/README.md`](tests/bench/README.md).
+Micro (FakeClient, no server): `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only`
+
+See [`benchmarks/README.md`](benchmarks/README.md).
 
 ## License
 
