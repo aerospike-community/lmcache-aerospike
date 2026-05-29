@@ -63,6 +63,37 @@ def test_native_connector_forwards_validated_params(monkeypatch):
     )
 
 
+def test_native_available_is_bool():
+    assert isinstance(native_connector.NATIVE_AVAILABLE, bool)
+
+
+@pytest.mark.parametrize(
+    "field, bad_value, match",
+    [
+        ("read_timeout_ms", 0, "read_timeout_ms must be a positive integer"),
+        ("write_timeout_ms", -1, "write_timeout_ms must be a positive integer"),
+        ("default_ttl_seconds", -1, "default_ttl_seconds must be a non-negative integer"),
+        ("dtype", "", "dtype must be a non-empty string"),
+    ],
+)
+def test_native_connector_validates_timeout_and_dtype(monkeypatch, field, bad_value, match):
+    class FakeNativeModule:
+        class AerospikeNativeClient:
+            pass
+
+    monkeypatch.setattr(native_connector, "_native", FakeNativeModule)
+    monkeypatch.setattr(native_connector, "NATIVE_AVAILABLE", True)
+
+    params = {
+        "hosts": "127.0.0.1:3000",
+        "namespace": "lmcache",
+        "set_name": "kv_chunks",
+        field: bad_value,
+    }
+    with pytest.raises(ValueError, match=match):
+        native_connector.AerospikeNativeConnector(**params)
+
+
 @pytest.mark.parametrize(
     "kwargs, match",
     [
