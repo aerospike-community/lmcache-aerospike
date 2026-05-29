@@ -113,6 +113,8 @@ pytest tests/integration -v
 
 Large payloads (16–64 MiB): `RUN_LARGE_INTEGRATION=1`.
 
+**L2 plugin** (`test_l2_plugin_e2e.py`): requires an editable [LMCache](https://github.com/LMCache/LMCache) `dev` checkout as a sibling directory (`../LMCache`) for `native_storage_ops` test fallbacks.
+
 ## Benchmarks
 
 Benchmark code lives under **`benchmarks/`** (not included in the PyPI wheel).
