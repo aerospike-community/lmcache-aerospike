@@ -66,9 +66,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install --upgrade pip wheel
+          # LMCache build-system pins setuptools 77–80 (see LMCache/pyproject.toml).
+          pip install "setuptools>=77.0.3,<81.0.0"
           # CPU-only torch keeps the hosted runner under ~7 GiB RAM (lmcache pulls torch).
           pip install "torch" --index-url https://download.pytorch.org/whl/cpu
+          # torch CPU can downgrade setuptools; restore LMCache's range before editable install.
+          pip install "setuptools>=77.0.3,<81.0.0" --force-reinstall
           # PyPI 0.4.x lacks L2StoreResult; install dev (pure Python on CI via NO_NATIVE_EXT).
           NO_NATIVE_EXT=1 pip install -e ./LMCache --no-build-isolation
           pip install -e . --no-deps
