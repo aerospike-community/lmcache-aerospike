@@ -75,24 +75,27 @@ def write_payload_into(memory_obj, payload: bytes | memoryview, offset: int = 0)
     """Copy *payload* into *memory_obj* at *offset*; return bytes written."""
     import torch
 
-    payload_b = bytes(payload)
-    end = offset + len(payload_b)
+    n = len(payload)
+    end = offset + n
     raw = getattr(memory_obj, "raw_data", None)
     if isinstance(raw, torch.Tensor):
         buf_bytes = raw.view(torch.uint8).flatten()
         if end > buf_bytes.numel():
             raise AerospikeInternalError(
-                f"payload length {len(payload_b)} at offset {offset} "
+                f"payload length {n} at offset {offset} "
                 f"exceeds buffer {buf_bytes.numel()}"
             )
-        src = torch.frombuffer(bytearray(payload_b), dtype=torch.uint8)
+        src = torch.frombuffer(payload, dtype=torch.uint8)
         buf_bytes[offset:end].copy_(src)
-        return len(payload_b)
+        return n
 
     buf = memory_obj.byte_array
     if end > len(buf):
         raise AerospikeInternalError(
-            f"payload length {len(payload_b)} at offset {offset} exceeds buffer {len(buf)}"
+            f"payload length {n} at offset {offset} exceeds buffer {len(buf)}"
         )
-    memoryview(buf)[offset:end] = payload_b
-    return len(payload_b)
+    if isinstance(payload, (bytes, bytearray)):
+        memoryview(buf)[offset:end] = payload
+    else:
+        memoryview(buf)[offset:end] = payload
+    return n
