@@ -17,10 +17,10 @@ LIVE = os.environ.get("RUN_BENCH_LIVE") == "1"
 
 def test_put_roundtrip(benchmark, bench_connector):
     conn, key, mo, _payload_size, _loop = bench_connector
-    conn._put_sync_impl(key, mo)
+    conn._engine.put(key, mo)
 
     def run():
-        conn._get_sync_impl(key)
+        conn._engine.get(key)
 
     benchmark(run)
 
@@ -29,7 +29,7 @@ def test_put_write(benchmark, bench_connector):
     conn, key, mo, _payload_size, _loop = bench_connector
 
     def run():
-        conn._put_sync_impl(key, mo)
+        conn._engine.put(key, mo)
 
     benchmark(run)
 
@@ -45,17 +45,17 @@ def test_get_miss(benchmark, bench_connector):
     )
 
     def run():
-        conn._get_sync_impl(missing)
+        conn._engine.get(missing)
 
     benchmark(run)
 
 
 def test_segment_size_sweep(benchmark, segment_sweep_connector):
     conn, key, mo, target, payload_size, _loop = segment_sweep_connector
-    conn._put_sync_impl(key, mo)
+    conn._engine.put(key, mo)
 
     def run():
-        conn._get_sync_impl(key)
+        conn._engine.get(key)
 
     benchmark(run)
     mean_s = benchmark.stats.stats.mean
@@ -85,10 +85,10 @@ def test_live_put_get(benchmark):
         payload = payload_pattern(chunk_len)
         key = make_cache_key(1)
         mo = make_memory_obj(backend, payload)
-        conn._put_sync_impl(key, mo)
+        conn._engine.put(key, mo)
 
         def run():
-            got = conn._get_sync_impl(key)
+            got = conn._engine.get(key)
             if got is not None:
                 got.ref_count_down()
 

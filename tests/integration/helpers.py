@@ -183,8 +183,7 @@ def meta_record_bins(connector: AerospikeRemoteConnector, key: CacheEngineKey) -
 
 
 def expected_nseg(payload_len: int, connector: AerospikeRemoteConnector) -> int:
-    assert connector._resolved is not None
-    r = connector._resolved
+    r = connector._engine.resolved
     p = shard_plan(
         payload_len,
         target_segment_bytes=r.target_segment_bytes,
@@ -197,28 +196,4 @@ def expected_nseg(payload_len: int, connector: AerospikeRemoteConnector) -> int:
 
 def put_pinned(connector: AerospikeRemoteConnector, key: CacheEngineKey, mo) -> None:
     """Write a pinned record (TTL -1) using the same path as production puts."""
-    from lmcache_aerospike import policies
-
-    assert connector._resolved is not None
-    total = mo.get_size()
-    r = connector._resolved
-    p = shard_plan(
-        total,
-        target_segment_bytes=r.target_segment_bytes,
-        max_segment_bytes=r.max_segment_bytes,
-        min_segment_bytes=r.min_segment_bytes,
-        single_record_threshold_bytes=r.single_record_threshold_bytes,
-    )
-    ttl = connector._ttl_value(pinned=True)
-    wmeta = connector._put_meta(ttl)
-    wp = policies.write_policy(connector.cfg)
-    mk = K.meta_key(connector.cfg.namespace, connector.cfg.set_name, key)
-    mbins = serde.meta_bins(
-        plan=p,
-        memory_obj=mo,
-        save_chunk_meta=connector.save_chunk_meta,
-        enable_crc32=connector.cfg.enable_crc32,
-        default_ttl=ttl,
-        pinned=True,
-    )
-    connector._client.put(mk, mbins, meta=wmeta, policy=wp)
+    connector._engine.put(key, mo, pinned=True)

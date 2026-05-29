@@ -57,6 +57,17 @@ class AerospikeRemoteConnector(RemoteConnector):
             ),
         )
 
+    @property
+    def _resolved(self):
+        """Resolved segment limits (tests and helpers)."""
+        return self._engine.resolved
+
+    def _ttl_value(self, pinned: bool = False) -> int:
+        return self._engine._ttl_value(pinned)
+
+    def _put_meta(self, ttl: int) -> dict:
+        return self._engine._put_meta(ttl)
+
     async def _run(self, fn, *args):
         return await self.loop.run_in_executor(self._executor, fn, *args)
 
