@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,6 +11,13 @@ import torch
 from lmcache_aerospike.config import AerospikeConfig
 from lmcache_aerospike.limits import ResolvedLimits
 from tests.unit.fakes import FakeClient, FakeLocalCPUBackend
+
+
+@pytest.fixture
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
 
 
 @pytest.fixture
@@ -50,6 +58,7 @@ def make_metadata_mock():
     metadata.use_mla = False
     metadata.chunk_size = 8
     metadata.get_num_groups.return_value = 1
+    metadata.world_size = 1
     return metadata
 
 

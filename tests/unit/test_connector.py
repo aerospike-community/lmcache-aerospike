@@ -52,10 +52,10 @@ def holder(fake_client: FakeClient):
 @pytest.fixture
 def connector(holder, as_config, fake_backend, small_resolved, event_loop):
     with patch(
-        "lmcache_aerospike.connector.limits.discover_limits",
+        "lmcache_aerospike.engine.limits.discover_limits",
         return_value=limits.ServerLimits(8388608, "max-record-size", 120),
     ), patch(
-        "lmcache_aerospike.connector.limits.resolve_segment_limits",
+        "lmcache_aerospike.engine.limits.resolve_segment_limits",
         return_value=small_resolved,
     ):
         conn = AerospikeRemoteConnector(
@@ -70,8 +70,7 @@ def connector(holder, as_config, fake_backend, small_resolved, event_loop):
 
 
 def test_constructor_sets_limits(connector):
-    assert connector._limits_ready is True
-    assert connector._resolved is not None
+    assert connector._engine.resolved is not None
 
 
 def test_close_idempotent(connector, holder, event_loop):
@@ -83,7 +82,7 @@ def test_close_idempotent(connector, holder, event_loop):
 def test_put_single_record(connector, fake_client):
     key = FakeKey("k1")
     mo = FakeMemoryObj(bytearray(b"a" * 256))
-    connector._put_sync_impl(key, mo)
+    connector._engine.put(key, mo)
     assert len(fake_client.put_calls) == 1
     assert fake_client.batch_write_batches == []
 
@@ -92,7 +91,7 @@ def test_put_multi_segment_then_meta(connector, fake_client):
     key = FakeKey("big")
     payload = b"x" * 3000
     mo = FakeMemoryObj(bytearray(payload))
-    connector._put_sync_impl(key, mo)
+    connector._engine.put(key, mo)
     assert len(fake_client.batch_write_batches) == 1
     assert len(fake_client.put_calls) == 1
     meta_key, bins, *_ = fake_client.put_calls[0]
@@ -104,9 +103,9 @@ def test_get_single_record_roundtrip(connector, fake_client, fake_backend):
     key = FakeKey("r1")
     payload = b"payload-bytes"
     mo = FakeMemoryObj(bytearray(payload))
-    connector._put_sync_impl(key, mo)
+    connector._engine.put(key, mo)
     fake_backend.alloc_size = len(payload)
-    got = connector._get_sync_impl(key)
+    got = connector._engine.get(key)
     assert got is not None
     assert bytes(got.byte_array[: len(payload)]) == payload
 
@@ -123,7 +122,7 @@ def test_get_missing_segment_returns_none(connector, fake_client):
     fake_client.batch_read_results = FakeBatchRecords(
         [FakeBatchRecord(0, None), FakeBatchRecord(2, None)]
     )
-    got = connector._get_sync_impl(key)
+    got = connector._engine.get(key)
     assert got is None
 
 
@@ -152,7 +151,7 @@ def test_put_record_too_big(connector, fake_client):
 
     fake_client.put = failing_put
     with pytest.raises(AerospikeRecordTooBigError):
-        connector._put_sync_impl(key, mo)
+        connector._engine.put(key, mo)
 
 
 def test_put_batch_busy(connector, fake_client):
@@ -167,13 +166,13 @@ def test_put_batch_busy(connector, fake_client):
 
     fake_client.batch_write = busy_batch_write
     with pytest.raises(AerospikeBusyError):
-        connector._put_sync_impl(key, mo)
+        connector._engine.put(key, mo)
 
 
 def test_remove_sync(connector, fake_client):
     key = FakeKey("rm")
     mo = FakeMemoryObj(bytearray(b"rm"))
-    connector._put_sync_impl(key, mo)
+    connector._engine.put(key, mo)
     assert connector.remove_sync(key) is True
     mk = K.meta_key(connector.cfg.namespace, connector.cfg.set_name, key)
     assert mk not in fake_client.get_store

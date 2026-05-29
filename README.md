@@ -8,10 +8,11 @@ sitting between LMCache's CPU/disk tiers and any cold object store.
 
 ## Status
 
-**Phase 1 (Python `RemoteConnector`)** is implemented on `main`:
+**Phase 1 (Python `RemoteConnector`)** and **Phase 2** (`StoragePluginInterface` + L2 `plugin`) are implemented on `main`:
 
 - Adaptive sharded meta + segment records, server cap discovery at construction
 - Batch APIs (`batched_get`, `batched_put`, `batched_contains`, …)
+- Phase 2: `AerospikeStoragePlugin` (single-process) and `AerospikeL2Plugin` (multiprocess L2)
 - Unit tests (no network) and integration tests against Aerospike CE in CI
 - Optional Prometheus metrics (`pip install -e ".[metrics]"`)
 
@@ -59,6 +60,35 @@ extra_config:
 
 Instance-scoped keys (`aerospike.primary`, `aerospike.dr`) use the same prefix
 with the instance name instead of `aerospike`.
+
+### Phase 2: storage plugin (single-process)
+
+```yaml
+storage_plugins: ["aerospike"]
+extra_config:
+  storage_plugin.aerospike.module_path: lmcache_aerospike.storage_plugin
+  storage_plugin.aerospike.class_name: AerospikeStoragePlugin
+  storage_plugin.aerospike.hosts: "127.0.0.1:3000"
+  storage_plugin.aerospike.namespace: lmcache
+  storage_plugin.aerospike.set: kv_chunks
+```
+
+### Phase 2: L2 plugin (multiprocess)
+
+```json
+{
+  "type": "plugin",
+  "module_path": "lmcache_aerospike.l2_plugin",
+  "class_name": "AerospikeL2Plugin",
+  "adapter_params": {
+    "hosts": "127.0.0.1:3000",
+    "namespace": "lmcache",
+    "set": "kv_chunks"
+  }
+}
+```
+
+Phase 2 uses the same Aerospike record layout as Phase 1. The **storage plugin** works with PyPI `lmcache` 0.4.x. The **L2 plugin** needs LMCache multiprocess L2 APIs (`L2StoreResult` on `lmcache.v1.distributed.internal_api`), which are not in PyPI 0.4.5 yet — use an LMCache `dev` build (or a future release) plus `native_storage_ops`.
 
 ## Compatibility
 
