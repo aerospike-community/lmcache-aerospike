@@ -39,6 +39,7 @@ docker/ scripts/
 | Unit | `pytest tests/unit -q` | No network |
 | Integration | `./scripts/start_aerospike_ce.sh` then `pytest tests/integration -q` | Live CE |
 | Ecosystem bench | `pip install -r benchmarks/requirements.txt` then `python benchmarks/run.py --profile smoke` | Not in CI by default |
+| L2 bench | `./scripts/setup_l2_bench.sh` then `./benchmarks/l2/run.sh` (LMCache `dev` + live CE) | Not in CI by default |
 | Micro bench | `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only` | FakeClient only |
 
 Pinned versions: `IMPLEMENTATION_PLAN.md` §0.2.
