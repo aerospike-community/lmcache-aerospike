@@ -123,6 +123,13 @@ pip install -r benchmarks/requirements.txt
 python benchmarks/run.py --profile smoke
 ```
 
+**L2 adapter** ([`lmcache bench l2`](https://docs.lmcache.ai/cli/bench_l2.html), requires LMCache `dev`):
+
+```bash
+./scripts/setup_l2_bench.sh
+# ./benchmarks/l2/run.sh   # after Aerospike is up
+```
+
 Micro (FakeClient, no server): `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only`
 
 See [`benchmarks/README.md`](benchmarks/README.md).

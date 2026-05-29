@@ -1,0 +1,12 @@
+# lmcache bench l2 harness — NOT part of the PyPI wheel.
+# Install this package first: pip install -e .
+# LMCache dev is installed by scripts/setup_l2_bench.sh (not listed here; needs --no-build-isolation).
+
+# CLI imports engine_bench at load time (even for ``bench l2`` only).
+openai>=1.0
+
+# Bench l2 uses TensorMemoryObj + L1MemoryDesc (see LMCache l2_adapter_bench/data.py).
+torch>=2.0
+
+# LMCache common.txt caps numpy for numba; match when installing LMCache from source.
+numpy>=1.17.3,<=2.2.6

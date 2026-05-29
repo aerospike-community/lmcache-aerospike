@@ -7,6 +7,7 @@ Harnesses for **lmcache-aerospike** live under `benchmarks/` and are **not** shi
 | Harness | Runner | Use when |
 |---|---|---|
 | **Ecosystem** (`run.py`) | [ai-ecosystem-benchmark](https://github.com/aerospike-community/ai-ecosystem-benchmark) | Coordinated-omission-safe QPS/latency on a live Aerospike CE node |
+| **L2** (`l2/`) | [`lmcache bench l2`](https://docs.lmcache.ai/cli/bench_l2.html) + `AerospikeL2Plugin` | Store / lookup / load through the MP L2 adapter API (needs LMCache `dev`) |
 | **Micro** (`micro/`) | pytest-benchmark + FakeClient | Fast, no-server connector overhead / segment-size sweep |
 
 ## Ecosystem harness (recommended)
@@ -48,6 +49,19 @@ aerospike://127.0.0.1:3000/lmcache?set=bench_eco_kv&num_tokens=128&target_segmen
 |---|---|---|
 | `smoke` | `kv_hotpath` | Laptop sanity, ~5 s per test |
 | `kv_chunk_smoke` | `kv_chunk` | 4 MiB target segment band |
+
+## L2 harness (`lmcache bench l2`)
+
+Benchmarks `AerospikeL2Plugin` via LMCache’s official L2 bench CLI (not PyPI 0.4.x).
+
+```bash
+./scripts/setup_l2_bench.sh          # LMCache dev + bench deps (once)
+./scripts/start_aerospike_ce.sh
+set -a && source .aerospike-ci.env && set +a
+./benchmarks/l2/run.sh               # when ready
+```
+
+See [`l2/README.md`](l2/README.md).
 
 ## Micro harness (no Aerospike)
 

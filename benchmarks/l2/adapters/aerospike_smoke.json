@@ -1,0 +1,10 @@
+{
+  "type": "plugin",
+  "module_path": "lmcache_aerospike.l2_plugin",
+  "class_name": "AerospikeL2Plugin",
+  "adapter_params": {
+    "hosts": "127.0.0.1:3000",
+    "namespace": "lmcache",
+    "set": "kv_chunks_bench_l2"
+  }
+}
