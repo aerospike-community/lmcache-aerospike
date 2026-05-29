@@ -2,7 +2,7 @@
 
 Aerospike remote storage backend for [LMCache](https://github.com/LMCache/LMCache). LMCache caches LLM attention KV tensors; this package implements the durable shared tier via LMCache's `RemoteConnector` plugin contract.
 
-**Status:** Phase 1 (`ConnectorAdapter` + `AerospikeRemoteConnector`) is implemented on `main`. Phase 2/3 remain design-only in `DESIGN.md`.
+**Status:** Phase 1 (`ConnectorAdapter` + `AerospikeRemoteConnector`) and Phase 2 (`AerospikeStoragePlugin`, `AerospikeL2Plugin`) are implemented on `main`. Phase 3 remains design-only in `DESIGN.md`.
 
 ## Read order
 
@@ -17,7 +17,7 @@ For Aerospike client/modeling rules, use [aerospike/agent-skills](https://github
 | Phase | Surface | In this repo today |
 | ----- | ------- | ------------------ |
 | 1 | `ConnectorAdapter` + `RemoteConnector` (Python) | **Implemented** |
-| 2 | `StoragePluginInterface`, `L2AdapterInterface` | Architectural in `DESIGN.md` only |
+| 2 | `StoragePluginInterface`, `L2AdapterInterface` | **Implemented** (`storage_plugin.py`, `l2_plugin.py`) |
 | 3 | C++ `ConnectorBase` / `libaerospike` | Architectural in `DESIGN.md` only |
 
 Stay inside Phase 1 unless the user explicitly expands scope.

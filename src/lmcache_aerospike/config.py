@@ -101,9 +101,13 @@ class AerospikeConfig:
         cls,
         extra_config: dict[str, Any] | None,
         plugin_name: str,
+        *,
+        config_prefix: str | None = None,
     ) -> AerospikeConfig:
         data = extra_config or {}
-        prefix = f"remote_storage_plugin.{plugin_name}."
+        prefix = config_prefix or f"remote_storage_plugin.{plugin_name}."
+        if not prefix.endswith("."):
+            prefix = f"{prefix}."
 
         def lookup(short_name: str, *aliases: str) -> Any:
             keys = (short_name, *aliases)
@@ -252,3 +256,29 @@ class AerospikeConfig:
             password=password,
             tls_name=tls_name,
         )
+
+    @classmethod
+    def from_storage_plugin_config(
+        cls,
+        extra_config: dict[str, Any] | None,
+        plugin_name: str,
+    ) -> AerospikeConfig:
+        """Parse ``storage_plugin.<name>.*`` keys from LMCache extra_config."""
+        return cls.from_extra_config(
+            extra_config,
+            plugin_name,
+            config_prefix=f"storage_plugin.{plugin_name}",
+        )
+
+    @classmethod
+    def from_adapter_params(
+        cls,
+        params: dict[str, Any] | None,
+        plugin_name: str = "aerospike",
+    ) -> AerospikeConfig:
+        """Parse flat L2 ``adapter_params`` dict (hosts, namespace, …)."""
+        data = params or {}
+        remapped: dict[str, Any] = {
+            f"remote_storage_plugin.{plugin_name}.{k}": v for k, v in data.items()
+        }
+        return cls.from_extra_config(remapped, plugin_name)

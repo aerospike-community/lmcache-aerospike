@@ -166,11 +166,11 @@ async def close_connector(connector: AerospikeRemoteConnector) -> None:
 
 
 def sync_put(connector: AerospikeRemoteConnector, key: CacheEngineKey, mo) -> None:
-    connector._put_sync_impl(key, mo)
+    connector._engine.put(key, mo)
 
 
 def sync_get(connector: AerospikeRemoteConnector, key: CacheEngineKey):
-    return connector._get_sync_impl(key)
+    return connector._engine.get(key)
 
 
 def meta_record_bins(connector: AerospikeRemoteConnector, key: CacheEngineKey) -> dict | None:

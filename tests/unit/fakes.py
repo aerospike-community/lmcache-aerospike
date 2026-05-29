@@ -118,6 +118,23 @@ class FakeClient:
             raise ax.RecordNotFound()
         del self.get_store[key]
 
+    def touch(self, key, meta=None, policy=None):
+        del meta, policy
+        if key not in self.get_store:
+            from aerospike import exception as ax
+
+            raise ax.RecordNotFound()
+
+    def operate(self, key, ops, meta=None, policy=None):
+        del meta, policy
+        if key not in self.get_store:
+            from aerospike import exception as ax
+
+            raise ax.RecordNotFound()
+        for operation in ops:
+            if hasattr(operation, "bin") and hasattr(operation, "value"):
+                self.get_store[key][operation.bin] = operation.value
+
     def is_connected(self):
         return self.connected
 
