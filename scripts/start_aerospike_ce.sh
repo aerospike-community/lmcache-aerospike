@@ -29,9 +29,14 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+PYTHON="${PYTHON:-python}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  PYTHON=python3
+fi
+
 HOST_PORT="${AEROSPIKE_TEST_PORT:-}"
 if [[ -z "$HOST_PORT" ]]; then
-  HOST_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')"
+  HOST_PORT="$("$PYTHON" -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')"
 fi
 
 CONF_DIR="$(mktemp -d)"
@@ -60,21 +65,28 @@ done
 
 echo "Waiting for host-side client on 127.0.0.1:${HOST_PORT} (up to 90s) ..."
 host_deadline=$((SECONDS + 90))
-until python3 -c "
+_host_probe_err="$(mktemp)"
+until "$PYTHON" -c "
 import aerospike
 c = aerospike.client({'hosts': [('127.0.0.1', ${HOST_PORT})]})
 c.connect()
 info = c.info_random_node('namespace/lmcache')
 c.close()
 assert 'nsup-period=120' in info
-" 2>/dev/null; do
+" 2>"$_host_probe_err"; do
   if (( SECONDS >= host_deadline )); then
     echo "Aerospike CE did not accept host connections in time." >&2
+    if [[ -s "$_host_probe_err" ]]; then
+      echo "Last host probe error:" >&2
+      tail -20 "$_host_probe_err" >&2
+    fi
     docker logs "$CONTAINER_NAME" 2>&1 | tail -80 >&2 || true
+    rm -f "$_host_probe_err"
     exit 1
   fi
   sleep 1
 done
+rm -f "$_host_probe_err"
 
 cat >"$ENV_FILE" <<EOF
 AEROSPIKE_TEST_HOST=127.0.0.1

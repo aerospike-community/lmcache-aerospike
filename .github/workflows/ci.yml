@@ -76,6 +76,7 @@ jobs:
           # PyPI 0.4.x lacks L2StoreResult; install dev (pure Python on CI via NO_NATIVE_EXT).
           NO_NATIVE_EXT=1 pip install -e ./LMCache --no-build-isolation
           pip install -e . --no-deps
+          pip install "aerospike>=14.0.0,<19.0.0"
           pip install pytest pytest-asyncio
 
       - name: Start Aerospike CE (Docker)

@@ -37,7 +37,7 @@ docker/ scripts/
 | ----- | ------- | ----- |
 | Preflight (S0) | `python scripts/preflight.py` | LMCache + Aerospike client symbols |
 | Unit | `pytest tests/unit -q` | No network |
-| Integration | `./scripts/start_aerospike_ce.sh` then `pytest tests/integration -q` | Live CE; CI also installs LMCache `dev` and runs `test_l2_plugin_e2e.py` |
+| Integration | `./scripts/ci_integration_install.sh` then `./scripts/start_aerospike_ce.sh` and `pytest tests/integration -q` | Live CE + LMCache `dev` for L2 E2E (mirrors CI) |
 | Ecosystem bench | `pip install -r benchmarks/requirements.txt` then `python benchmarks/run.py --profile smoke` | Not in CI by default |
 | L2 bench | `./scripts/setup_l2_bench.sh` then `./benchmarks/l2/run.sh` (LMCache `dev` + live CE) | Not in CI by default |
 | Micro bench | `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only` | FakeClient only |

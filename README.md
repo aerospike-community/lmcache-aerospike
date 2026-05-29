@@ -113,7 +113,7 @@ pytest tests/integration -v
 
 Large payloads (16–64 MiB): `RUN_LARGE_INTEGRATION=1`.
 
-**L2 plugin** (`test_l2_plugin_e2e.py`): requires [LMCache](https://github.com/LMCache/LMCache) `dev` with multiprocess L2 APIs (CI checks out `LMCache/` in-repo; locally use a sibling `../LMCache` or `LMCACHE_SRC`).
+**L2 plugin** (`test_l2_plugin_e2e.py`): requires [LMCache](https://github.com/LMCache/LMCache) `dev` with multiprocess L2 APIs. Clone into `LMCache/` (or set `LMCACHE_SRC`). Local install matching CI: `./scripts/ci_integration_install.sh`.
 
 ## Benchmarks
 
