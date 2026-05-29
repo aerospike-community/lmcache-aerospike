@@ -163,7 +163,7 @@ python benchmarks/run.py --profile smoke
 ```bash
 ./scripts/setup_l2_bench.sh
 # ./scripts/start_aerospike_ce.sh && ./scripts/start_redis_bench.sh
-# source .aerospike-ci.env && source .redis-bench.env
+# set -a && source .aerospike-ci.env && source .redis-bench.env && set +a
 # ./benchmarks/l2/compare.sh
 # ./benchmarks/l2/run.sh --backend aerospike-native
 ```
