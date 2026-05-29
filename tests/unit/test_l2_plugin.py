@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import select
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from tests.integration.helpers import ensure_native_storage_ops_for_l2_tests
 
 l2_mod = importlib.import_module("lmcache_aerospike.l2_plugin")
 if not l2_mod.L2_MP_AVAILABLE:
@@ -12,9 +15,14 @@ if not l2_mod.L2_MP_AVAILABLE:
         allow_module_level=True,
     )
 
-pytest.importorskip("lmcache.native_storage_ops")
+ensure_native_storage_ops_for_l2_tests()
+
+from lmcache.v1.protocol import init_remote_metadata_info
+
+init_remote_metadata_info(1)
 
 from lmcache.v1.distributed.api import ObjectKey
+from lmcache.v1.platform import consume_fd
 
 from lmcache_aerospike import limits
 from lmcache_aerospike.client import AerospikeClientHolder
@@ -45,6 +53,18 @@ def l2_plugin(fake_client: FakeClient, small_resolved):
     plugin.close()
 
 
+def _wait_fd(fd: int, timeout: float = 5.0) -> bool:
+    poll = select.poll()
+    poll.register(fd, select.POLLIN)
+    if not poll.poll(timeout * 1000):
+        return False
+    try:
+        consume_fd(fd)
+    except BlockingIOError:
+        pass
+    return True
+
+
 def test_l2_store_and_lookup(l2_plugin: AerospikeL2Plugin):
     kv_rank = ObjectKey.ComputeKVRank(1, 0, 1, 0)
     ok = ObjectKey(
@@ -54,19 +74,13 @@ def test_l2_store_and_lookup(l2_plugin: AerospikeL2Plugin):
     )
     obj = FakeMemoryObj(bytearray(b"z" * 256))
     tid = l2_plugin.submit_store_task([ok], [obj])
-    for _ in range(50):
-        done = l2_plugin.pop_completed_store_tasks()
-        if tid in done:
-            assert done[tid].is_successful()
-            break
-    else:
-        pytest.fail("store task did not complete")
+    assert _wait_fd(l2_plugin.get_store_event_fd())
+    done = l2_plugin.pop_completed_store_tasks()
+    assert tid in done
+    assert done[tid].is_successful()
 
     ltid = l2_plugin.submit_lookup_and_lock_task([ok])
-    for _ in range(50):
-        bm = l2_plugin.query_lookup_and_lock_result(ltid)
-        if bm is not None:
-            assert bm.test(0)
-            break
-    else:
-        pytest.fail("lookup did not complete")
+    assert _wait_fd(l2_plugin.get_lookup_and_lock_event_fd())
+    bm = l2_plugin.query_lookup_and_lock_result(ltid)
+    assert bm is not None
+    assert bm.test(0)

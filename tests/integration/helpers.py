@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
+import importlib.util
 import os
+import sys
+import types
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -24,6 +29,78 @@ from lmcache_aerospike.sharding import plan as shard_plan
 
 def on_github_actions() -> bool:
     return os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+
+
+def lmcache_source_root() -> Path | None:
+    """LMCache source tree (CI: ``LMCache/`` in repo; local: sibling ``../LMCache``)."""
+    env = os.environ.get("LMCACHE_SRC", "").strip()
+    if env:
+        root = Path(env)
+        return root if root.is_dir() else None
+    repo = Path(__file__).resolve().parents[2]
+    for candidate in (repo / "LMCache", repo.parent / "LMCache"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def install_lmcache_test_native_storage_ops_fallback() -> bool:
+    """Use LMCache's test Bitmap stub when ``native_storage_ops`` is not built."""
+    try:
+        mod = importlib.import_module("lmcache.native_storage_ops")
+        if hasattr(mod, "Bitmap") and hasattr(mod, "TTLLock"):
+            return True
+    except Exception:
+        pass
+
+    root = lmcache_source_root()
+    raw_utils = (
+        None
+        if root is None
+        else root / "tests/v1/storage_backend/raw_block_test_utils.py"
+    )
+    if raw_utils is None or not raw_utils.is_file():
+        return False
+
+    spec = importlib.util.spec_from_file_location(
+        "lmcache_raw_block_test_utils", raw_utils
+    )
+    raw_mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(raw_mod)
+    raw_mod.install_native_storage_ops_fallback()
+    return True
+
+
+def _minimal_native_storage_ops_fallback() -> None:
+    """Tiny Bitmap/TTLLock stub when LMCache source is unavailable."""
+
+    class Bitmap:
+        def __init__(self, size: int, first_n: int = 0) -> None:
+            self._size = int(size)
+            self._bits = {i for i in range(min(int(first_n), self._size))}
+
+        def set(self, index: int) -> None:
+            index = int(index)
+            if index < 0 or index >= self._size:
+                raise IndexError(index)
+            self._bits.add(index)
+
+        def test(self, index: int) -> bool:
+            return int(index) in self._bits
+
+    class TTLLock:
+        pass
+
+    fallback = types.ModuleType("lmcache.native_storage_ops")
+    fallback.Bitmap = Bitmap  # type: ignore[attr-defined]
+    fallback.TTLLock = TTLLock  # type: ignore[attr-defined]
+    sys.modules["lmcache.native_storage_ops"] = fallback
+
+
+def ensure_native_storage_ops_for_l2_tests() -> None:
+    if not install_lmcache_test_native_storage_ops_fallback():
+        _minimal_native_storage_ops_fallback()
 
 
 def aerospike_hosts() -> tuple[tuple[str, int], ...]:
