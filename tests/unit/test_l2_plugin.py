@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import select
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from tests.integration.helpers import ensure_native_storage_ops_for_l2_tests
 
 l2_mod = importlib.import_module("lmcache_aerospike.l2_plugin")
 if not l2_mod.L2_MP_AVAILABLE:
@@ -15,18 +15,7 @@ if not l2_mod.L2_MP_AVAILABLE:
         allow_module_level=True,
     )
 
-_lmcache_root = Path(__file__).resolve().parents[3] / "LMCache"
-_raw_utils = _lmcache_root / "tests/v1/storage_backend/raw_block_test_utils.py"
-if _raw_utils.is_file():
-    _spec = importlib.util.spec_from_file_location(
-        "lmcache_raw_block_test_utils", _raw_utils
-    )
-    _raw_mod = importlib.util.module_from_spec(_spec)
-    assert _spec.loader is not None
-    _spec.loader.exec_module(_raw_mod)
-    _raw_mod.install_native_storage_ops_fallback()
-else:
-    pytest.importorskip("lmcache.native_storage_ops")
+ensure_native_storage_ops_for_l2_tests()
 
 from lmcache.v1.protocol import init_remote_metadata_info
 

@@ -3,25 +3,17 @@
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import os
 import select
-from pathlib import Path
 
 import pytest
 
-_LMCACHE_ROOT = Path(__file__).resolve().parents[3] / "LMCache"
-_raw_utils = _LMCACHE_ROOT / "tests/v1/storage_backend/raw_block_test_utils.py"
-if _raw_utils.is_file():
-    _spec = importlib.util.spec_from_file_location(
-        "lmcache_raw_block_test_utils", _raw_utils
-    )
-    _raw_mod = importlib.util.module_from_spec(_spec)
-    assert _spec.loader is not None
-    _spec.loader.exec_module(_raw_mod)
-    _raw_mod.install_native_storage_ops_fallback()
-else:
-    pytest.skip(f"LMCache test utils not found at {_raw_utils}", allow_module_level=True)
+from tests.integration.helpers import (
+    aerospike_hosts,
+    ensure_native_storage_ops_for_l2_tests,
+)
+
+ensure_native_storage_ops_for_l2_tests()
 
 l2_mod = importlib.import_module("lmcache_aerospike.l2_plugin")
 if not l2_mod.L2_MP_AVAILABLE:
@@ -41,7 +33,6 @@ from lmcache.v1.distributed.l2_adapters.plugin_l2_adapter import (  # noqa: E402
     PluginL2AdapterConfig,
 )
 from lmcache.v1.platform import consume_fd  # noqa: E402
-from tests.integration.helpers import aerospike_hosts  # noqa: E402
 from tests.unit.fakes import FakeMemoryObj  # noqa: E402
 
 pytestmark = pytest.mark.skipif(
