@@ -1286,6 +1286,73 @@ each is updated).
 
 ---
 
+## Phase 3 addendum — native Aerospike L2 connector
+
+Phase 3 is implemented after Phase 1 and Phase 2, using LMCache's native
+connector protocol rather than a Python executor hot path. This addendum is the
+source of truth for the native implementation direction.
+
+### P3.1 Redis comparison outcome
+
+Adopt these native RESP techniques:
+
+- C++ worker tiling for batched set/get/exists/delete.
+- pybind methods that release the GIL after extracting key strings and
+  memoryview pointers.
+- A single pollable completion fd and one completion per submitted batch.
+- Per-key result bits for lookup/load/delete so LMCache can represent partial
+  batch success.
+- Direct copies between Aerospike C client byte values and LMCache-provided
+  buffers; no Python `bytes` hop on the hot path.
+
+Do **not** adopt Redis' raw schema as the initial Aerospike native schema. Phase
+3 starts compatibility-first: native records use the existing Phase 1/2
+meta+segment layout, including the inline single-record fast path and sharded
+fallback for payloads above the discovered Aerospike record cap.
+
+### P3.2 Files to add or modify
+
+- Add `csrc/aerospike/connector.h`, `csrc/aerospike/connector.cpp`, and
+  `csrc/aerospike/pybind.cpp`.
+- Add `src/lmcache_aerospike/native_connector.py` as the Python factory class
+  used by LMCache `native_plugin`.
+- Update `pyproject.toml` and add `setup.py` if setuptools extension wiring is
+  needed for `pybind11` and `libaerospike`.
+- Add native L2 adapter JSONs under `benchmarks/l2/adapters/`.
+- Update `benchmarks/l2/run.sh`, `benchmarks/l2/compare.sh`, and
+  `benchmarks/l2/README.md` so `aerospike-native` can be benchmarked against
+  Redis `resp`.
+- Add unit tests and gated `RUN_NATIVE=1` integration tests.
+
+### P3.3 Schema evolution rule
+
+The compatible schema remains the default until benchmarks prove it is a top
+bottleneck. If a raw native schema becomes worthwhile, choose one of two paths:
+
+1. Add an explicit raw native mode that is documented as incompatible with
+   Phase 1/2 records.
+2. Align Phase 1, Phase 2, and Phase 3 to the faster schema together, with
+   migration or dual-read coverage.
+
+Do not silently make Phase 1/2 configs write one schema while native L2 writes
+another schema under the same backend name.
+
+### P3.4 Verification gates
+
+- `pytest tests/unit -q`
+- `RUN_NATIVE=1 pytest tests/integration -q` when `libaerospike` and Aerospike CE
+  are available.
+- `./benchmarks/l2/run.sh --backend aerospike-native`
+- `./benchmarks/l2/run.sh --backend resp`
+- `./benchmarks/l2/compare.sh --native` or the equivalent sequential comparison
+  command added by Phase 3.
+
+If Aerospike native is still materially slower than Redis, inspect benchmark
+output before changing schema. First optimize worker counts, Aerospike C client
+policies, batch shape, batch API usage, and per-op allocation overhead.
+
+---
+
 ## Final acceptance checklist (Phase 1 "done")
 
 Mirrors DESIGN §1.5, with corrections.

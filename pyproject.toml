@@ -1,6 +1,6 @@
 # file: pyproject.toml
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "pybind11>=2.12"]
 build-backend = "setuptools.build_meta"
 
 [project]

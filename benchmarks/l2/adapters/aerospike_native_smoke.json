@@ -1,0 +1,12 @@
+{
+  "type": "native_plugin",
+  "module_path": "lmcache_aerospike.native_connector",
+  "class_name": "AerospikeNativeConnector",
+  "adapter_params": {
+    "hosts": "127.0.0.1:3000",
+    "namespace": "lmcache",
+    "set_name": "kv_chunks_bench_l2_native",
+    "num_workers": 8,
+    "dtype": "bfloat16"
+  }
+}

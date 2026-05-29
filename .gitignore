@@ -12,6 +12,7 @@ venv/
 .env
 .envrc
 .aerospike-ci.env
+.redis-bench.env
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -26,4 +27,5 @@ htmlcov/
 # Local LMCache dev clone for L2 integration tests / CI layout (see README).
 LMCache/
 benchmarks/results/
+benchmarks/l2/results/
 benchmarks/l2/.env.local

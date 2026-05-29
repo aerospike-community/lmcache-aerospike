@@ -7,6 +7,7 @@ Harnesses for **lmcache-aerospike** live under `benchmarks/` and are **not** shi
 | Harness | Runner | Use when |
 |---|---|---|
 | **Ecosystem** (`run.py`) | [ai-ecosystem-benchmark](https://github.com/aerospike-community/ai-ecosystem-benchmark) | Coordinated-omission-safe QPS/latency on a live Aerospike CE node |
+| **L2** (`l2/`) | [`lmcache bench l2`](https://docs.lmcache.ai/cli/bench_l2.html) | Aerospike plugin vs Redis (`resp`); `compare.sh` runs same profile sequentially |
 | **Micro** (`micro/`) | pytest-benchmark + FakeClient | Fast, no-server connector overhead / segment-size sweep |
 
 ## Ecosystem harness (recommended)
@@ -48,6 +49,20 @@ aerospike://127.0.0.1:3000/lmcache?set=bench_eco_kv&num_tokens=128&target_segmen
 |---|---|---|
 | `smoke` | `kv_hotpath` | Laptop sanity, ~5 s per test |
 | `kv_chunk_smoke` | `kv_chunk` | 4 MiB target segment band |
+
+## L2 harness (`lmcache bench l2`)
+
+Benchmarks **Aerospike** (`AerospikeL2Plugin`) and **Redis** (LMCache `resp` / `lmcache_redis`) via the official L2 bench CLI (LMCache `dev`).
+
+```bash
+./scripts/setup_l2_bench.sh
+./scripts/start_aerospike_ce.sh
+./scripts/start_redis_bench.sh
+set -a && source .aerospike-ci.env && source .redis-bench.env && set +a
+./benchmarks/l2/compare.sh           # same load, Aerospike then Redis (sequential)
+```
+
+See [`l2/README.md`](l2/README.md).
 
 ## Micro harness (no Aerospike)
 
