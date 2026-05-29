@@ -38,9 +38,9 @@ docker/ scripts/
 | Preflight (S0) | `python scripts/preflight.py` | LMCache + Aerospike client symbols |
 | Unit | `pytest tests/unit -q` | No network |
 | Integration | `./scripts/start_aerospike_ce.sh` then `pytest tests/integration -q` | Live CE |
+| Native integration | CI job `integration-native`; locally: `./scripts/ci_native_install.sh` then `RUN_NATIVE=1 pytest tests/integration/test_native_l2_*.py -q` | Builds `_native` + live CE |
 | Ecosystem bench | `pip install -r benchmarks/requirements.txt` then `python benchmarks/run.py --profile smoke` | Not in CI by default |
 | L2 bench | `./scripts/setup_l2_bench.sh` (builds `.deps/` C client + `_native`); `./benchmarks/l2/compare.sh` | Not in CI by default |
-| Native integration | `RUN_NATIVE=1 pytest tests/integration/test_native_connector_e2e.py -q` | After `build_libaerospike.sh` + CE |
 | Micro bench | `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only` | FakeClient only |
 
 Pinned versions: `IMPLEMENTATION_PLAN.md` §0.2.
