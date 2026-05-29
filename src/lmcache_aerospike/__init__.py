@@ -9,6 +9,7 @@ __all__ = [
     "AerospikeStoragePlugin",
     "AerospikeL2Plugin",
     "AerospikeL2PluginConfig",
+    "AerospikeNativeConnector",
 ]
 __version__ = "0.3.0"
 
@@ -31,4 +32,8 @@ def __getattr__(name: str):
 
         _require_l2_mp()
         return AerospikeL2PluginConfig
+    if name == "AerospikeNativeConnector":
+        from lmcache_aerospike.native_connector import AerospikeNativeConnector
+
+        return AerospikeNativeConnector
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

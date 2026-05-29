@@ -1,0 +1,6 @@
+{
+  "type": "resp",
+  "host": "127.0.0.1",
+  "port": 6399,
+  "num_workers": 8
+}

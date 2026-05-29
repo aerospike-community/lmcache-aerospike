@@ -1,16 +1,17 @@
 # LMCache Aerospike Backend - Design Document
 
-**Status:** v0.2 — Phase 1 implemented (see `main` and `IMPLEMENTATION_PLAN.md`)
+**Status:** v0.3 — Phase 1 and Phase 2 implemented; Phase 3 native connector in progress (see `main` and `IMPLEMENTATION_PLAN.md`)
 **Audience:** Engineers implementing and reviewing an Aerospike storage backend for [LMCache](https://github.com/LMCache/LMCache).
 **Scope:** A multi-phase plan delivering an Aerospike-backed remote KV-cache tier for LMCache, anchored to LMCache's `RemoteConnector` plugin contract and a CE-only, adaptive-sharded Aerospike data model tuned for ~4 MiB chunks.
 
-> **v0.2 reconciliation (verified against upstream LMCache `dev` and the official Aerospike Python client).** This revision corrects the design against the actual contracts before implementation. The companion build guide is `IMPLEMENTATION_PLAN.md`. Key changes:
+> **v0.3 reconciliation (verified against upstream LMCache `dev`, LMCache native RESP, and the official Aerospike clients).** This revision corrects the design against the actual contracts before implementation. The companion build guide is `IMPLEMENTATION_PLAN.md`. Key changes:
 > 1. **Server-side limit discovery runs at connector construction, not `post_init()`** — upstream `RemoteBackend` never calls `post_init()` on a remote connector ([Section 4.3.6](#436-server-side-record-size-discovery), [Section 4.4.0](#440-construction-time-limit-discovery-_ensure_limits-and-the-post_init-override)).
 > 2. **Batch API corrected** to `batch_write(BatchRecords([...]))` and `batch_read(keys, [])`; the removed `exists_many`/`get_many`/`select_many` helpers are not used ([Section 4.4.4](#444-async-def-putself-key-cacheenginekey-memory_obj-memoryobj), [Section 4.4.7](#447-def-support_batched_containsself---bool---true-and-def-batched_containsself-keys-listcacheenginekey---int)).
 > 3. **Metadata is one serialized `RemoteMetadata` blob (`md` bin), gated on `save_chunk_meta`**, mirroring `FSConnector` — replacing the rigid `shape0..shape3`/`dtype`/`fmt` bins; reads allocate accordingly ([Section 4.3.1](#431-meta-record), [Section 4.4.3](#443-async-def-getself-key-cacheenginekey---optionalmemoryobj)).
 > 4. **The connector is serde-agnostic**; `naive`/`cachegen`/`kivi` serde and MLA/layerwise key rewriting happen in `RemoteBackend` above it ([Section 4.4](#44-method-by-method-implementation-spec)).
 > 5. **Aerospike client pinned to `>=14,<19`** because `meta={"ttl": N}` is deprecated from `19.1.0`; per-record cap is server-governed (7.1+ `max-record-size` default 1 MiB), and the ops sweet spot is restated as **1-10 KiB** ([Section 2.2](#22-aerospike-just-enough-for-this-design), [Section 4.1](#41-package-layout)).
 > 6. **4 MiB `target_segment_bytes` retained** and now cited to the LMCache paper ([arXiv:2510.09665](https://arxiv.org/abs/2510.09665)); the Aerospike ops sweet spot and the LMCache byte-throughput sweet spot are explicitly distinguished ([Section 4.3.4](#434-adaptive-shard-planner)).
+> 7. **Phase 3 follows Redis' native mechanics, not its schema by default**: C++ workers, GIL-free pybind submissions, eventfd completions, and direct buffer copies are adopted immediately, while the Phase 1/2 meta+segment schema remains the first native layout. A raw Redis-like schema is reserved for a benchmark-proven follow-up, either as a separate native mode or as a coordinated migration of Phase 1 and Phase 2.
 
 ---
 
@@ -21,7 +22,7 @@
 3. [Approaches considered](#3-approaches-considered)
 4. [Phase 1 - Remote Storage Plugin (implementation-ready)](#4-phase-1---remote-storage-plugin-implementation-ready)
 5. [Phase 2 - StoragePluginInterface and L2 adapter (architectural)](#5-phase-2---storageplugininterface-and-l2-adapter-architectural)
-6. [Phase 3 - Native C++ connector (architectural)](#6-phase-3---native-c-connector-architectural)
+6. [Phase 3 - Native C++ connector (implementation-ready direction)](#6-phase-3---native-c-connector-implementation-ready-direction)
 7. [Open questions](#7-open-questions)
 8. [References](#8-references)
 
@@ -61,9 +62,9 @@ The doc uses these short labels throughout:
 
 | Label                                  | Surface                                                                              | Status                           |
 | -------------------------------------- | ------------------------------------------------------------------------------------ | -------------------------------- |
-| `phase 1: remote connector`            | `ConnectorAdapter` + `RemoteConnector` (Python)                                      | Implementation-ready in this doc |
-| `phase 2: storage plugin / L2 adapter` | `StoragePluginInterface`, `L2AdapterInterface` (Python `plugin` and `native_plugin`) | Architectural in this doc        |
-| `phase 3: native C++ connector`        | `ConnectorBase` (C++/pybind11 against `libaerospike`)                                | Architectural in this doc        |
+| `phase 1: remote connector`            | `ConnectorAdapter` + `RemoteConnector` (Python)                                      | Implemented                      |
+| `phase 2: storage plugin / L2 adapter` | `StoragePluginInterface`, `L2AdapterInterface` (Python `plugin`)                     | Implemented                      |
+| `phase 3: native C++ connector`        | `ConnectorBase`-style C++/pybind11 against `libaerospike` via LMCache `native_plugin` | Implementation in progress       |
 
 
 ### 1.5 Success criteria for Phase 1
@@ -111,7 +112,7 @@ This is the road map for the rest of the doc:
 | `ConnectorAdapter` + `RemoteConnector` (Python, single-process worker)   | `aerospike` Python client wrapped behind `loop.run_in_executor`; adaptive sharded data model    | 1     |
 | `StoragePluginInterface` (Python, full backend, non-multiprocess)        | Same data model; takes ownership of `LocalCPUBackend` interactions for richer admission control | 2     |
 | `L2AdapterInterface` (Python `plugin` and `native_plugin`, multiprocess) | Python L2 wraps Phase 1/2; `native_plugin` exposes a C++ adapter with `eventfd` completions     | 2 / 3 |
-| C++ `ConnectorBase` (highest throughput, RESP-style)                     | pybind11 binding over `libaerospike` with `as_event_loop` and zero-copy buffers                 | 3     |
+| Native C++ connector (highest throughput, RESP-style mechanics)          | pybind11 binding over `libaerospike`, LMCache native connector protocol, Phase 1/2 schema first | 3     |
 
 
 ---
@@ -791,9 +792,9 @@ Until any of these triggers, Phase 1 is the recommended path and Phase 2 stays a
 
 ---
 
-## 6. Phase 3 - Native C++ connector (architectural)
+## 6. Phase 3 - Native C++ connector (implementation-ready direction)
 
-Phase 3 replaces the Python connector hot path with a C++ implementation modeled after LMCache's native RESP connector ([`resp_client.py`](https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/native_clients/resp_client.py) and the `ConnectorBase` base class it pairs with).
+Phase 3 replaces the Python L2 hot path with a C++ implementation modeled after LMCache's native RESP connector ([`resp_client.py`](https://github.com/LMCache/LMCache/blob/dev/lmcache/v1/storage_backend/native_clients/resp_client.py), `NativeConnectorL2Adapter`, and the `ConnectorBase` protocol it pairs with). Redis' winning techniques are the native mechanics: C++ worker tiling, GIL-free pybind submissions, one eventfd-backed completion stream, and direct copies into LMCache-provided buffers. Phase 3 adopts those techniques first while preserving the Phase 1/2 Aerospike schema.
 
 ### 6.1 Why we want it
 
@@ -801,12 +802,24 @@ The Python connector ceiling is set by GIL contention on the executor pool, copy
 
 ### 6.2 Design sketch
 
-- **Language and bindings.** C++17 implementation; pybind11 binding exposed as `lmcache_aerospike._native` and registered through the LMCache `native_plugin` slot.
-- **Client.** Official Aerospike C client (`libaerospike`) using `as_event_loop` for asynchronous operations.
-- **Threading.** A dedicated event-loop thread (or thread pool tuned to NIC queues); the Python side never holds the GIL during fetch.
-- **Buffers.** Zero-copy: writes consume LMCache-supplied `void*` buffers directly; reads write into LMCache-supplied buffers without an intermediate `bytes` copy.
-- **Completion model.** `eventfd`-based; matches the existing LMCache `native_plugin` completion contract.
-- **Data model.** Identical to Phase 1 (meta + segments). The native connector reads records written by Phase 1/2 and vice versa.
+- **Language and bindings.** C++17 implementation; pybind11 binding exposed as `lmcache_aerospike._native` and loaded through LMCache's `native_plugin` L2 adapter.
+- **LMCache native contract.** Expose `event_fd`, `submit_batch_get`, `submit_batch_set`, `submit_batch_exists`, `submit_batch_delete`, `drain_completions`, and `close`, matching `LMCACHE_BIND_CONNECTOR_METHODS` semantics so `NativeConnectorL2Adapter` handles demux, locking, and L2 task accounting.
+- **Client.** Official Aerospike C client (`libaerospike`) with one shared cluster client per native connector instance; workers issue key operations against that client with read/write policies matching Phase 1/2 defaults.
+- **Threading.** Use the same worker tiling model as LMCache Redis' native connector: each submitted batch is split across C++ worker threads, and one completion is emitted when all tiles finish. The Python side never holds the GIL after pybind has extracted key strings and memoryview pointers.
+- **Buffers.** Writes wrap LMCache-supplied buffers with Aerospike C client bytes values where the API allows; reads copy Aerospike bytes directly into LMCache's preallocated `MemoryObj` buffers without a Python `bytes` hop.
+- **Completion model.** Eventfd-based, with per-key result bits for lookup/load/delete and one completion per submitted batch.
+- **Data model.** Default native layout is the Phase 1/2 meta+segment schema: inline payload bin `b` for single-record objects, segment records for larger objects, and meta-last publish semantics with `state`, `nseg`, `seg_b`, and `tot_b`. Because L2 loads are preallocated, native code does not need to add new LMCache shape/dtype metadata; it only preserves the existing bins required for compatibility and sharding correctness.
+
+### 6.2.1 Schema evolution policy
+
+Phase 3 does **not** begin by switching to a Redis-like raw one-record schema. That schema can reduce bins and branching, but it would break compatibility with Phase 1/2 records unless every Aerospike path migrates together.
+
+The allowed future paths are:
+
+1. **Separate raw native mode:** keep Phase 1/2 compatible schema as the default, and add an opt-in raw native schema if benchmarks prove schema overhead is a top bottleneck.
+2. **Coordinated schema migration:** change Phase 1, Phase 2, and Phase 3 to the faster schema together, with explicit migration or dual-read support.
+
+Do not make a schema-breaking change on guesswork. The benchmark loop must first show that the compatible schema, rather than Python overhead, Aerospike policy choices, worker count, network/device bandwidth, or batch shape, is one of the top bottlenecks.
 
 ### 6.3 Build and distribution
 
@@ -821,6 +834,7 @@ The Python connector ceiling is set by GIL contention on the executor pool, copy
 - **Build matrix cost.** manylinux wheels, ABI compatibility across `libaerospike` releases, debug story (gdb on the native side, py-spy on the Python side, correlating them).
 - **Upstream tracking.** LMCache's `ConnectorBase` is the youngest surface; tracking changes will be ongoing work.
 - **Operational surface.** Customers debugging will need both Python and C++ familiarity.
+- **Schema pressure.** Preserving Phase 1/2 schema may leave some performance on the table versus Redis' raw key/value storage. Treat this as a measured optimization decision, not a Phase 3 prerequisite.
 
 ### 6.5 Decision criteria for Phase 2 -> Phase 3
 

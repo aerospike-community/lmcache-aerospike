@@ -18,7 +18,7 @@ For Aerospike client/modeling rules, use [aerospike/agent-skills](https://github
 | ----- | ------- | ------------------ |
 | 1 | `ConnectorAdapter` + `RemoteConnector` (Python) | **Implemented** |
 | 2 | `StoragePluginInterface`, `L2AdapterInterface` | **Implemented** (`storage_plugin.py`, `l2_plugin.py`) |
-| 3 | C++ `ConnectorBase` / `libaerospike` | Architectural in `DESIGN.md` only |
+| 3 | C++ `ConnectorBase` / `libaerospike` | **Implemented** (`csrc/aerospike/`, `native_connector.py`; build via `scripts/build_libaerospike.sh`) |
 
 Stay inside Phase 1 unless the user explicitly expands scope.
 
@@ -37,9 +37,10 @@ docker/ scripts/
 | ----- | ------- | ----- |
 | Preflight (S0) | `python scripts/preflight.py` | LMCache + Aerospike client symbols |
 | Unit | `pytest tests/unit -q` | No network |
-| Integration | `./scripts/ci_integration_install.sh` then `./scripts/start_aerospike_ce.sh` and `pytest tests/integration -q` | Live CE + LMCache `dev` for L2 E2E (mirrors CI) |
+| Integration | `./scripts/start_aerospike_ce.sh` then `pytest tests/integration -q` | Live CE |
 | Ecosystem bench | `pip install -r benchmarks/requirements.txt` then `python benchmarks/run.py --profile smoke` | Not in CI by default |
-| L2 bench | `./scripts/setup_l2_bench.sh` then `./benchmarks/l2/run.sh` (LMCache `dev` + live CE) | Not in CI by default |
+| L2 bench | `./scripts/setup_l2_bench.sh` (builds `.deps/` C client + `_native`); `./benchmarks/l2/compare.sh` | Not in CI by default |
+| Native integration | `RUN_NATIVE=1 pytest tests/integration/test_native_connector_e2e.py -q` | After `build_libaerospike.sh` + CE |
 | Micro bench | `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only` | FakeClient only |
 
 Pinned versions: `IMPLEMENTATION_PLAN.md` §0.2.

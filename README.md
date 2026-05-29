@@ -8,11 +8,12 @@ sitting between LMCache's CPU/disk tiers and any cold object store.
 
 ## Status
 
-**Phase 1 (Python `RemoteConnector`)** and **Phase 2** (`StoragePluginInterface` + L2 `plugin`) are implemented on `main`:
+**Phase 1 (Python `RemoteConnector`)** and **Phase 2** (`StoragePluginInterface` + L2 `plugin`) are implemented on `main`. **Phase 3** adds a native C++ L2 connector for the LMCache `native_plugin` path:
 
 - Adaptive sharded meta + segment records, server cap discovery at construction
 - Batch APIs (`batched_get`, `batched_put`, `batched_contains`, …)
 - Phase 2: `AerospikeStoragePlugin` (single-process) and `AerospikeL2Plugin` (multiprocess L2)
+- Phase 3: native C++ workers, GIL-free pybind submissions, and eventfd completions while preserving the Phase 1/2 Aerospike schema first
 - Unit tests (no network) and integration tests against Aerospike CE in CI
 - Optional Prometheus metrics (`pip install -e ".[metrics]"`)
 
@@ -90,6 +91,40 @@ extra_config:
 
 Phase 2 uses the same Aerospike record layout as Phase 1. The **storage plugin** works with PyPI `lmcache` 0.4.x. The **L2 plugin** needs LMCache multiprocess L2 APIs (`L2StoreResult` on `lmcache.v1.distributed.internal_api`), which are not in PyPI 0.4.5 yet — use an LMCache `dev` build (or a future release) plus `native_storage_ops`.
 
+### Phase 3: native L2 connector (multiprocess)
+
+Phase 3 is loaded through LMCache's `native_plugin` adapter and keeps the Phase
+1/2 meta+segment record layout by default. Schema-breaking raw native layouts
+are reserved for a benchmark-proven future optimization, or for a coordinated
+migration of Phase 1, Phase 2, and Phase 3 together.
+
+Build the Aerospike C client locally (no root required), then install this package
+with the native extension:
+
+```bash
+./scripts/build_libaerospike.sh
+source .deps/aerospike-client-c.env
+LMCACHE_AEROSPIKE_FORCE_NATIVE=1 pip install -e . --no-build-isolation
+```
+
+For system packages (`libaerospike-dev`, `libyaml-dev`), set `AEROSPIKE_INCLUDE_DIR` /
+`AEROSPIKE_LIBRARY_DIR` if needed. Use `LMCACHE_AEROSPIKE_FORCE_NATIVE=1` to fail the
+build when prerequisites are missing.
+
+```json
+{
+  "type": "native_plugin",
+  "module_path": "lmcache_aerospike.native_connector",
+  "class_name": "AerospikeNativeConnector",
+  "adapter_params": {
+    "hosts": "127.0.0.1:3000",
+    "namespace": "lmcache",
+    "set_name": "kv_chunks",
+    "num_workers": 8
+  }
+}
+```
+
 ## Compatibility
 
 | Component | Version |
@@ -113,8 +148,6 @@ pytest tests/integration -v
 
 Large payloads (16–64 MiB): `RUN_LARGE_INTEGRATION=1`.
 
-**L2 plugin** (`test_l2_plugin_*.py`): live tests against Aerospike CE via `PluginL2AdapterConfig`, aligned with LMCache’s meaningful upstream patterns (`test_mock_l2_adapter`, RESP L2 integration, `lmc_external_l2_adapter`) — not LMCache’s full mocked suite. Requires [LMCache](https://github.com/LMCache/LMCache) `dev` in `LMCache/` (or `LMCACHE_SRC`). Install: `./scripts/ci_integration_install.sh`.
-
 ## Benchmarks
 
 Benchmark code lives under **`benchmarks/`** (not included in the PyPI wheel).
@@ -125,11 +158,14 @@ pip install -r benchmarks/requirements.txt
 python benchmarks/run.py --profile smoke
 ```
 
-**L2 adapter** ([`lmcache bench l2`](https://docs.lmcache.ai/cli/bench_l2.html), requires LMCache `dev`):
+**L2 adapter** ([`lmcache bench l2`](https://docs.lmcache.ai/cli/bench_l2.html), requires LMCache `dev` + `lmcache_redis` for Redis):
 
 ```bash
 ./scripts/setup_l2_bench.sh
-# ./benchmarks/l2/run.sh   # after Aerospike is up
+# ./scripts/start_aerospike_ce.sh && ./scripts/start_redis_bench.sh
+# set -a && source .aerospike-ci.env && source .redis-bench.env && set +a
+# ./benchmarks/l2/compare.sh
+# ./benchmarks/l2/run.sh --backend aerospike-native
 ```
 
 Micro (FakeClient, no server): `RUN_BENCH=1 pytest benchmarks/micro --benchmark-only`

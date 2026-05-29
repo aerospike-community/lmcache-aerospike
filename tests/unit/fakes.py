@@ -108,8 +108,27 @@ class FakeClient:
                 records.append(FakeBatchRecord(2, None))
         return FakeBatchRecords(records)
 
+    def _apply_write_ops(self, key: tuple, ops: list) -> None:
+        if key not in self.get_store:
+            self.get_store[key] = {}
+        for operation in ops:
+            if hasattr(operation, "bin") and hasattr(operation, "value"):
+                self.get_store[key][operation.bin] = operation.value
+
     def batch_write(self, batch):
         self.batch_write_batches.append(batch)
+        writes = getattr(batch, "batch_records", batch)
+        results: list[FakeBatchRecord] = []
+        for w in writes:
+            key = getattr(w, "key", None)
+            ops = getattr(w, "ops", None)
+            if key is not None and ops is not None:
+                self._apply_write_ops(key, ops)
+                results.append(FakeBatchRecord(0))
+            else:
+                results.append(FakeBatchRecord(2, None))
+        if hasattr(batch, "batch_records"):
+            batch.batch_records = results
 
     def remove(self, key):
         if key not in self.get_store:

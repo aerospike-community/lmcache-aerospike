@@ -79,8 +79,10 @@ def build_engine_l2(
     from lmcache.v1.memory_management import MemoryFormat
 
     resolved = AerospikeStorageEngine.discover_and_resolve(holder.client, as_cfg)
+    # Bench / MP L2 callers pass opaque byte buffers (e.g. bench l2 TensorMemoryObj)
+    # without per-chunk RemoteMetadata shapes; use fixed connector metadata on read.
     meta = EngineMetadata(
-        save_chunk_meta=True,
+        save_chunk_meta=False,
         meta_shapes=[torch.Size([2, 1, 8, 128])],
         meta_dtypes=[dtype],
         meta_fmt=MemoryFormat.KV_2LTD,

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import threading
 from collections import defaultdict
-from typing import Any, Union
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Callable, TypeVar, Union
+
+_T = TypeVar("_T")
 
 import torch
 
@@ -151,6 +153,11 @@ if L2_MP_AVAILABLE:
                 holder=self._holder,
                 dtype=dtype,
             )
+            # Overlap chunked Aerospike batch I/O (client is thread-safe).
+            self._batch_executor = ThreadPoolExecutor(
+                max_workers=min(4, max(1, as_cfg.executor_threads // 4)),
+                thread_name_prefix="as-l2-batch",
+            )
 
             self._store_efd = create_event_notifier()
             self._lookup_efd = create_event_notifier()
@@ -162,10 +169,6 @@ if L2_MP_AVAILABLE:
             self._done_lookup: dict[L2TaskId, Any] = {}
             self._done_load: dict[L2TaskId, Any] = {}
             self._lock = threading.Lock()
-
-            self._loop = asyncio.new_event_loop()
-            self._thread = threading.Thread(target=self._run_loop, daemon=True)
-            self._thread.start()
 
             logger.info(
                 "AerospikeL2Plugin ready hosts=%s namespace=%s",
@@ -192,10 +195,7 @@ if L2_MP_AVAILABLE:
         ) -> L2TaskId:
             with self._lock:
                 tid = self._alloc_id()
-            asyncio.run_coroutine_threadsafe(
-                self._do_store(keys, objects, tid),
-                self._loop,
-            )
+            self._executor.submit(self._store_sync, keys, objects, tid)
             return tid
 
         def pop_completed_store_tasks(self) -> dict[L2TaskId, L2StoreResult]:
@@ -207,7 +207,7 @@ if L2_MP_AVAILABLE:
         def submit_lookup_and_lock_task(self, keys: list[ObjectKey]) -> L2TaskId:
             with self._lock:
                 tid = self._alloc_id()
-            self._loop.call_soon_threadsafe(self._do_lookup, keys, tid)
+            self._executor.submit(self._lookup_sync, keys, tid)
             return tid
 
         def query_lookup_and_lock_result(self, task_id: L2TaskId) -> Any | None:
@@ -215,18 +215,7 @@ if L2_MP_AVAILABLE:
                 return self._done_lookup.pop(task_id, None)
 
         def submit_unlock(self, keys: list[ObjectKey]) -> None:
-            def _unlock(ks: list[ObjectKey]) -> None:
-                for ok in ks:
-                    ck = self._to_ck(ok)
-                    if ok not in self._locked:
-                        continue
-                    if self._locked[ok] <= 1:
-                        del self._locked[ok]
-                    else:
-                        self._locked[ok] -= 1
-                    self._engine.unpin(ck)
-
-            self._loop.call_soon_threadsafe(_unlock, keys)
+            self._executor.submit(self._unlock_sync, keys)
 
         def submit_load_task(
             self,
@@ -235,10 +224,7 @@ if L2_MP_AVAILABLE:
         ) -> L2TaskId:
             with self._lock:
                 tid = self._alloc_id()
-            asyncio.run_coroutine_threadsafe(
-                self._do_load(keys, objects, tid),
-                self._loop,
-            )
+            self._executor.submit(self._load_sync, keys, objects, tid)
             return tid
 
         def query_load_result(self, task_id: L2TaskId) -> Any | None:
@@ -254,25 +240,47 @@ if L2_MP_AVAILABLE:
             self._notify_keys_deleted(keys, sizes)
 
         def close(self) -> None:
-            if self._loop.is_running():
-                self._loop.call_soon_threadsafe(self._loop.stop)
-            self._thread.join(timeout=5)
+            self._batch_executor.shutdown(wait=True)
             self._executor.shutdown(wait=True)
             self._holder.release()
             self._store_efd.close()
             self._lookup_efd.close()
             self._load_efd.close()
 
-        def _run_loop(self) -> None:
-            asyncio.set_event_loop(self._loop)
-            self._loop.run_forever()
-
         def _alloc_id(self) -> L2TaskId:
             tid = self._next_id
             self._next_id += 1
             return tid
 
-        async def _do_store(
+        def _parallel_chunks(
+            self,
+            fn: Callable[[list[_T]], list[bool]],
+            items: list[_T],
+            *,
+            chunk_size: int = 32,
+        ) -> list[bool]:
+            if len(items) <= chunk_size:
+                return fn(items)
+            chunks = [
+                items[i : i + chunk_size] for i in range(0, len(items), chunk_size)
+            ]
+            if len(chunks) == 1:
+                return fn(items)
+            ordered: list[list[bool] | None] = [None] * len(chunks)
+            futures = {
+                self._batch_executor.submit(fn, chunk): idx
+                for idx, chunk in enumerate(chunks)
+            }
+            for fut in as_completed(futures):
+                idx = futures[fut]
+                ordered[idx] = fut.result()
+            out: list[bool] = []
+            for part in ordered:
+                assert part is not None
+                out.extend(part)
+            return out
+
+        def _store_sync(
             self,
             keys: list[ObjectKey],
             objects: list[MemoryObj],
@@ -283,13 +291,21 @@ if L2_MP_AVAILABLE:
             stored_keys: list[ObjectKey] = []
             stored_sizes: list[int] = []
             try:
-                for ok_key, obj in zip(keys, objects, strict=False):
-                    ck = self._to_ck(ok_key)
-                    sz = obj.get_size()
-                    await asyncio.to_thread(self._engine.put, ck, obj)
+                items = [
+                    (self._to_ck(ok_key), obj)
+                    for ok_key, obj in zip(keys, objects, strict=False)
+                ]
+                results = self._parallel_chunks(
+                    lambda chunk: self._engine.batched_put(chunk, pinned=False),
+                    items,
+                )
+                for ok_key, obj, success in zip(keys, objects, results, strict=False):
+                    if not success:
+                        ok = False
+                        continue
                     stored_keys.append(ok_key)
-                    stored_sizes.append(sz)
-                    total += sz
+                    stored_sizes.append(obj.get_size())
+                    total += obj.get_size()
             except Exception:
                 logger.exception("Aerospike L2 store task failed")
                 ok = False
@@ -300,43 +316,70 @@ if L2_MP_AVAILABLE:
                 self._notify_keys_stored(stored_keys, stored_sizes)
             self._store_efd.notify()
 
-        def _do_lookup(self, keys: list[ObjectKey], tid: L2TaskId) -> None:
+        def _lookup_sync(self, keys: list[ObjectKey], tid: L2TaskId) -> None:
             bm = _bitmap(len(keys))
-            hit_keys: list[CacheEngineKey] = []
-            for i, ok in enumerate(keys):
-                ck = self._to_ck(ok)
-                if not self._engine.exists(ck):
+            cks = [self._to_ck(ok) for ok in keys]
+            try:
+                hits = self._engine.batched_exists_mask(cks)
+            except Exception:
+                logger.exception("Aerospike L2 lookup task failed")
+                hits = [False] * len(keys)
+
+            hit_cks: list[CacheEngineKey] = []
+            for i, (ok, ck, hit) in enumerate(
+                zip(keys, cks, hits, strict=False)
+            ):
+                if not hit:
                     continue
                 bm.set(i)
                 self._locked[ok] += 1
-                hit_keys.append(ck)
-            if hit_keys:
-                self._engine.pin_keys(hit_keys)
-                hit_keys = [k for i, k in enumerate(keys) if bm.test(i)]
-                self._notify_keys_accessed(hit_keys)
+                hit_cks.append(ck)
+
+            if hit_cks:
+                self._engine.pin_keys(hit_cks)
+                accessed = [k for i, k in enumerate(keys) if bm.test(i)]
+                self._notify_keys_accessed(accessed)
+
             with self._lock:
                 self._done_lookup[tid] = bm
             self._lookup_efd.notify()
 
-        async def _do_load(
+        def _load_sync(
             self,
             keys: list[ObjectKey],
             objects: list[MemoryObj],
             tid: L2TaskId,
         ) -> None:
             bm = _bitmap(len(keys))
-            for i, (ok, obj) in enumerate(zip(keys, objects, strict=False)):
-                ck = self._to_ck(ok)
+            try:
+                items = [
+                    (self._to_ck(ok), obj)
+                    for ok, obj in zip(keys, objects, strict=False)
+                ]
+                hits = self._parallel_chunks(
+                    lambda chunk: self._engine.batched_get_preallocated(chunk),
+                    items,
+                )
+                for i, hit in enumerate(hits):
+                    if hit:
+                        bm.set(i)
+            except Exception:
+                logger.exception("Aerospike L2 load task failed")
 
-                def _read() -> bool:
-                    got = self._engine.get(ck, preallocated=obj)
-                    return got is not None
-
-                if await asyncio.to_thread(_read):
-                    bm.set(i)
             with self._lock:
                 self._done_load[tid] = bm
             self._load_efd.notify()
+
+        def _unlock_sync(self, keys: list[ObjectKey]) -> None:
+            for ok in keys:
+                ck = self._to_ck(ok)
+                if ok not in self._locked:
+                    continue
+                if self._locked[ok] <= 1:
+                    del self._locked[ok]
+                else:
+                    self._locked[ok] -= 1
+                self._engine.unpin(ck)
 
 else:
 
