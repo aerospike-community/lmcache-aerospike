@@ -4,3 +4,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  - package-ecosystem: pip
+    directory: /benchmarks/l2
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: pip
+    directory: /benchmarks
+    schedule:
+      interval: weekly
